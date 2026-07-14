@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Provtidsbevakaren</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <main id="loginView" class="login-shell" hidden>
+      <section class="login-card">
+        <div class="brand-mark" aria-hidden="true">P</div>
+        <p class="eyebrow">Säker inloggning</p>
+        <h1>Välkommen tillbaka</h1>
+        <p class="muted">
+          Logga in för att hantera dina bevakningar. Inloggningscookies från
+          Trafikverket lagras aldrig.
+        </p>
+        <form id="loginForm" class="stack">
+          <label
+            >Användarnamn<input
+              name="username"
+              autocomplete="username"
+              required
+          /></label>
+          <label
+            >Lösenord<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+          /></label>
+          <button class="button primary full" type="submit">Logga in</button>
+        </form>
+        <p id="loginError" class="form-error" role="alert"></p>
+      </section>
+    </main>
+
+    <div id="appView" class="app-shell" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="#overview" aria-label="Provtidsbevakaren">
+          <span class="brand-mark">P</span>
+          <span
+            ><strong>Provtidsbevakaren</strong
+            ><small>Smartare tidsbevakning</small></span
+          >
+        </a>
+        <nav aria-label="Huvudmeny">
+          <a class="nav-link active" href="#overview" data-section="overview"
+            ><span>01</span> Översikt</a
+          >
+          <a class="nav-link" href="#settings" data-section="settings"
+            ><span>02</span> Inställningar</a
+          >
+          <a class="nav-link" href="#activity" data-section="activity"
+            ><span>03</span> Aktivitet</a
+          >
+        </nav>
+        <div class="privacy-note">
+          <span class="privacy-icon">✓</span>
+          <div>
+            <strong>Privat session</strong
+            ><small id="privacyText">Cookies sparas aldrig.</small>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <button
+            id="menuButton"
+            class="icon-button menu-button"
+            aria-label="Öppna meny"
+          >
+            ☰
+          </button>
+          <div>
+            <p class="eyebrow">Kontrollpanel</p>
+            <h1>Din provtidsbevakning</h1>
+          </div>
+          <div class="top-actions">
+            <span id="modeBadge" class="badge">LOCAL</span>
+            <button id="logoutButton" class="button ghost" hidden>
+              Logga ut
+            </button>
+            <button id="exitButton" class="button ghost">
+              Stäng programmet
+            </button>
+          </div>
+        </header>
+
+        <section id="overview" class="page-section">
+          <div class="hero-card">
+            <div>
+              <p class="eyebrow light">Aktuell status</p>
+              <h2 id="statusTitle">Redo att starta</h2>
+              <p id="statusDescription">
+                Fyll i dina uppgifter och starta bevakningen när du är klar.
+              </p>
+            </div>
+            <div class="status-orbit"><span id="statusDot"></span></div>
+          </div>
+          <div class="metric-grid">
+            <article class="metric">
+              <span>Läge</span
+              ><strong id="metricMode">Endast notifiering</strong
+              ><small>Vald åtgärd vid träff</small>
+            </article>
+            <article class="metric">
+              <span>Intervall</span><strong id="metricInterval">60 sek</strong
+              ><small>Mellan kontroller</small>
+            </article>
+            <article class="metric">
+              <span>Senaste händelse</span
+              ><strong id="metricEvent">Ingen ännu</strong
+              ><small id="metricEventTime">Bevakningen har inte startat</small>
+            </article>
+          </div>
+        </section>
+
+        <form id="monitorForm" novalidate>
+          <section id="settings" class="page-section">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Inställningar</p>
+                <h2>Vad ska bevakas?</h2>
+              </div>
+              <p>Obligatoriska fält är markerade med *</p>
+            </div>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <span class="step-number">1</span>
+                <div>
+                  <h3>Person och prov</h3>
+                  <p>Grunduppgifter som behövs för sökningen.</p>
+                </div>
+              </div>
+              <div class="form-grid">
+                <label
+                  >Bevakningens namn *<input
+                    name="name"
+                    value="Alfred"
+                    maxlength="80"
+                    required
+                /></label>
+                <label
+                  >Personnummer *<input
+                    name="ssn"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    pattern="[0-9]{8}-?[0-9]{4}"
+                    required
+                /></label>
+                <label
+                  >Behörighets-ID *<input
+                    name="licence_id"
+                    type="number"
+                    min="1"
+                    value="23"
+                    required
+                /></label>
+                <label
+                  >Provtyp-ID *<input
+                    name="examination_type_id"
+                    type="number"
+                    min="1"
+                    value="52"
+                    required
+                /></label>
+                <label
+                  >Plats-ID *<input
+                    name="location_id"
+                    type="number"
+                    min="1"
+                    value="1000130"
+                    required
+                /></label>
+                <label
+                  >Närliggande plats-ID:n<input
+                    name="nearby_location_ids"
+                    inputmode="numeric"
+                    aria-describedby="nearbyHelp"
+                  /><small id="nearbyHelp"
+                    >Separera flera ID:n med komma.</small
+                  ></label
+                >
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <span class="step-number">2</span>
+                <div>
+                  <h3>Datum och tid</h3>
+                  <p>Begränsa träffarna till tider som passar dig.</p>
+                </div>
+              </div>
+              <div class="form-grid">
+                <label>Från datum<input name="date_from" type="date" /></label>
+                <label>Till datum<input name="date_to" type="date" /></label>
+                <label
+                  >Tidigast<input
+                    name="earliest_time"
+                    type="time"
+                    value="08:00"
+                /></label>
+                <label
+                  >Senast<input name="latest_time" type="time" value="17:00"
+                /></label>
+                <label
+                  >Kontrollintervall<input
+                    name="poll_interval_seconds"
+                    type="number"
+                    min="10"
+                    value="60"
+                  /><small>Minst 10 sekunder.</small></label
+                >
+                <fieldset class="weekday-field">
+                  <legend>Veckodagar</legend>
+                  <div class="weekday-list">
+                    <label
+                      ><input
+                        type="checkbox"
+                        name="weekday"
+                        value="0"
+                        checked
+                      /><span>M</span></label
+                    >
+                    <label
+                      ><input
+                        type="checkbox"
+                        name="weekday"
+                        value="1"
+                        checked
+                      /><span>T</span></label
+                    >
+                    <label
+                      ><input
+                        type="checkbox"
+                        name="weekday"
+                        value="2"
+                        checked
+                      /><span>O</span></label
+                    >
+                    <label
+                      ><input
+                        type="checkbox"
+                        name="weekday"
+                        value="3"
+                        checked
+                      /><span>T</span></label
+                    >
+                    <label
+                      ><input
+                        type="checkbox"
+                        name="weekday"
+                        value="4"
+                        checked
+                      /><span>F</span></label
+                    >
+                    <label
+                      ><input type="checkbox" name="weekday" value="5" /><span
+                        >L</span
+                      ></label
+                    >
+                    <label
+                      ><input type="checkbox" name="weekday" value="6" /><span
+                        >S</span
+                      ></label
+                    >
+                  </div>
+                </fieldset>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <span class="step-number">3</span>
+                <div>
+                  <h3>Åtgärd vid träff</h3>
+                  <p>Välj hur långt tjänsten ska gå automatiskt.</p>
+                </div>
+              </div>
+              <div class="mode-grid">
+                <label class="mode-card"
+                  ><input
+                    type="radio"
+                    name="booking_mode"
+                    value="notify"
+                    checked
+                  /><span class="mode-check">✓</span><strong>Notifiera</strong
+                  ><small>Skicka notis men gör ingen reservation.</small></label
+                >
+                <label class="mode-card"
+                  ><input
+                    type="radio"
+                    name="booking_mode"
+                    value="reserve"
+                  /><span class="mode-check">✓</span><strong>Reservera</strong
+                  ><small
+                    >Reservera första träffen och öppna bokningssidan.</small
+                  ></label
+                >
+                <label class="mode-card"
+                  ><input type="radio" name="booking_mode" value="book" /><span
+                    class="mode-check"
+                    >✓</span
+                  ><strong>Boka åt mig</strong
+                  ><small
+                    >Reservera och välj alltid Pay later/faktura.</small
+                  ></label
+                >
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <span class="step-number">4</span>
+                <div>
+                  <h3>Discord</h3>
+                  <p>Valfri notifiering till en privat kanal.</p>
+                </div>
+              </div>
+              <div class="inline-field">
+                <label
+                  >Webhook URL<input
+                    name="discord_webhook_url"
+                    type="url"
+                    autocomplete="off" /></label
+                ><button
+                  id="discordButton"
+                  class="button secondary"
+                  type="button"
+                >
+                  Testa webhook
+                </button>
+              </div>
+            </article>
+
+            <details class="panel advanced">
+              <summary>Avancerade provinställningar</summary>
+              <div class="form-grid advanced-grid">
+                <label
+                  >Fordonstyp-ID<input
+                    name="vehicle_type_id"
+                    type="number"
+                    min="1"
+                    value="1"
+                /></label>
+                <label
+                  >Färdskrivartyp-ID<input
+                    name="tachograph_type_id"
+                    type="number"
+                    min="1"
+                    value="1"
+                /></label>
+                <label
+                  >Valtyp-ID<input
+                    name="occasion_choice_id"
+                    type="number"
+                    min="1"
+                    value="1"
+                /></label>
+                <label
+                  >Språk-ID<input
+                    name="language_id"
+                    type="number"
+                    min="1"
+                    value="13"
+                /></label>
+              </div>
+            </details>
+          </section>
+
+          <section id="activity" class="page-section">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Aktivitet</p>
+                <h2>Händelser i realtid</h2>
+              </div>
+              <button id="clearActivity" class="button ghost" type="button">
+                Rensa visning
+              </button>
+            </div>
+            <div id="activityList" class="activity-list">
+              <div class="empty-state">
+                <span>↻</span><strong>Inga händelser ännu</strong>
+                <p>Här visas inloggning, sökningar, reservationer och fel.</p>
+              </div>
+            </div>
+          </section>
+
+          <footer class="action-bar">
+            <div>
+              <strong id="footerStatus">Redo</strong
+              ><small>Inställningarna sparas inte lokalt efter avslut.</small>
+            </div>
+            <div>
+              <button
+                id="stopButton"
+                class="button danger"
+                type="button"
+                disabled
+              >
+                Stoppa</button
+              ><button id="startButton" class="button primary" type="submit">
+                Starta bevakning
+              </button>
+            </div>
+          </footer>
+        </form>
+      </main>
+    </div>
+
+    <dialog id="eventDialog" class="event-dialog">
+      <button id="dialogClose" class="dialog-close" aria-label="Stäng">
+        ×
+      </button>
+      <div id="dialogIcon" class="dialog-icon">✓</div>
+      <h2 id="dialogTitle">Händelse</h2>
+      <p id="dialogMessage"></p>
+      <a
+        id="browserLink"
+        class="button primary full"
+        href="#"
+        target="_blank"
+        rel="noopener"
+        hidden
+        >Öppna säker webbläsare</a
+      >
+      <button id="dialogOk" class="button secondary full">Fortsätt</button>
+    </dialog>
+  </body>
+</html>
