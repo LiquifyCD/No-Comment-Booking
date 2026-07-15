@@ -1,26 +1,19 @@
 # No-Comment-Booking
 
-A local-first service that monitors driving-test appointments, filters matching
-slots, and can notify, reserve, or book using **Pay later/invoice**. The default
-mode runs entirely on the user's computer and opens a modern web interface
-without requiring a console window.
+No-Comment-Booking is a local-first service for monitoring driving-test appointments. It can notify, reserve, or complete a reservation using **Pay later/invoice**. The default Windows application opens a responsive web dashboard and does not require a console window.
 
-The project also includes a complete, separate server mode. It is intentionally
-disabled until the hosting environment, HTTPS, remote browser, and secrets have
-been configured. This repository does not deploy a public instance.
+An opt-in server runtime is included for later deployment. It remains disabled until HTTPS, authentication, encryption, and isolated browser infrastructure are configured.
 
-## Local mode (default)
+## Local mode
 
-1. Download `No-Comment-Booking.exe` from a release or build it yourself.
-2. Double-click the file.
-3. The application starts a server bound only to `127.0.0.1` and opens the dashboard.
-4. Enter your settings and start monitoring.
-5. When authentication is required, a private Chrome or Edge window opens for BankID.
+1. Download or build `No-Comment-Booking.exe`.
+2. Double-click it. The application binds only to `127.0.0.1` and opens the dashboard.
+3. Enter the identity number and select **Connect Mobile BankID**.
+4. Scan the rotating QR code shown inside the dashboard, or open BankID on the same device.
+5. Select a licence, examination type, and searchable test location by name. Their numeric IDs are resolved automatically from Trafikverket's API.
+6. Start monitoring.
 
-The same browser session remains open for reservation and manual completion.
-Trafikverket cookies exist only in process memory and are deleted when the
-application stops. Form data, personal identity numbers, and webhook URLs are
-not persisted after the program closes.
+The start-date minimum is always the user's current local date and is revalidated by the backend. Trafikverket cookies and BankID challenge data exist only in process memory and are cleared when the program closes. The separate browser flow is retained only as an explicit fallback if integrated authentication fails.
 
 ### Run from source
 
@@ -30,35 +23,46 @@ python -m venv .venv
 .venv\Scripts\python run.py
 ```
 
-### Tests and executable build
+### Verify and build
 
 ```powershell
+.venv\Scripts\python -m ruff check .
 .venv\Scripts\python -m pytest
 .venv\Scripts\python -m compileall -q provtidsbevakaren run.py
 powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
 ```
 
-The executable is created at `dist\No-Comment-Booking.exe`.
+The executable is written to `dist\No-Comment-Booking.exe`.
+
+## Main workflow
+
+- Mobile BankID starts and rotates its QR code inside the dashboard.
+- The backend keeps BankID reference, QR secret, and autostart token out of frontend state.
+- After login, `licence-information` supplies readable licence choices.
+- Selecting a licence loads its examination types and all available locations from `search-information`.
+- Locations are deduplicated, alphabetically sorted, and searchable.
+- A found slot can trigger notification, automatic reservation, or automatic Pay later booking.
+- A reserved slot remains available in the dashboard for a guarded, single-click Pay later completion attempt.
 
 ## Operating modes
 
 | Capability | Local mode | Server mode |
 |---|---|---|
 | Default | Yes | No, explicitly disabled |
-| Interface | Local browser | Public HTTPS website |
-| Session cookies | Process memory only | Isolated process memory per user |
+| Interface | Local web dashboard | Public HTTPS website |
+| Trafikverket cookies | Process memory only | Isolated process memory per user |
 | Configuration | Memory only | Encrypted SQLite |
-| BankID browser | Local Chrome or Edge | Isolated Remote WebDriver |
+| BankID | Integrated QR/same-device link | Integrated QR/same-device link |
+| Browser fallback | Local Chrome or Edge | Isolated Remote WebDriver |
 | Access control | One-time localhost token | Password, signed HttpOnly cookie, and CSRF |
 
 ## Enabling server mode later
 
-Server mode refuses to start when any mandatory protection is missing.
+Server mode fails closed if any mandatory protection is missing.
 
 1. Configure an HTTPS reverse proxy.
-2. Configure an isolated Selenium-compatible Remote WebDriver and an
-   authenticated viewer/noVNC URL for each user.
-3. Generate secrets locally:
+2. Configure an isolated Selenium-compatible Remote WebDriver and authenticated viewer/noVNC URL per user for browser fallback.
+3. Generate secrets:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -66,30 +70,19 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 python -m provtidsbevakaren.launcher --hash-password
 ```
 
-4. Copy `.env.server.example` to a private environment configuration and set
-   `APP_SECRET_KEY`, `DATA_ENCRYPTION_KEY`, `SERVER_USERS_JSON`, `PUBLIC_ORIGIN`,
-   `ALLOWED_HOSTS`, `REMOTE_WEBDRIVER_URL`, and `REMOTE_BROWSER_VIEW_URL`.
-5. Finally set `APP_MODE=server` and `ENABLE_SERVER_MODE=true`.
+4. Copy `.env.server.example` to a private environment file and set `APP_SECRET_KEY`, `DATA_ENCRYPTION_KEY`, `SERVER_USERS_JSON`, `PUBLIC_ORIGIN`, `ALLOWED_HOSTS`, `REMOTE_WEBDRIVER_URL`, and `REMOTE_BROWSER_VIEW_URL`.
+5. Set `APP_MODE=server` and `ENABLE_SERVER_MODE=true`.
 6. Start the container behind HTTPS and verify `/api/health`.
 
-Example user configuration, where the hash is generated by the command above:
+Never commit the environment file. See [architecture](docs/ARCHITECTURE.md) and [security](docs/SECURITY.md).
 
-```json
-{"alfred":"pbkdf2_sha256$600000$..."}
-```
+## Reliability and safety
 
-Never commit the environment file. See the
-[architecture documentation](docs/ARCHITECTURE.md) and
-[security guide](docs/SECURITY.md) for details.
-
-## Safety guarantees
-
-- Booking never starts until the server has confirmed the exact date, time, and location.
-- Mutating reservation and invoice requests are never retried automatically.
-- If booking fails, the reservation page opens in the same authenticated session.
-- Every user has a separate monitoring job and browser session.
-- Logs and API responses do not expose identity numbers, cookies, or webhook URLs.
-- Server mode requires HTTPS, signed sessions, CSRF protection, encrypted storage,
-  and explicit activation.
+- Reservation and invoice mutations are never retried automatically.
+- Server state is read back before a reservation is treated as successful.
+- Duplicate BankID, catalog, monitoring, and booking actions are guarded.
+- Failed catalog refreshes leave the last valid in-memory catalog intact.
+- Missing fields and expired authentication produce explicit UI errors.
+- Logs and public API state exclude identity numbers, cookies, webhook URLs, and BankID challenge secrets.
 
 No-Comment-Booking is not an official Trafikverket service.

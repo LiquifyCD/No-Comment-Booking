@@ -1,3 +1,7 @@
+param(
+    [string]$DistPath = (Join-Path $PSScriptRoot "dist")
+)
+
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $python = Join-Path $root ".venv\Scripts\python.exe"
@@ -11,8 +15,10 @@ if (-not (Test-Path -LiteralPath $python)) {
     & $python -m pip install -e ".[dev]"
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
 
-$output = Join-Path $root "dist\No-Comment-Booking.exe"
-if (Get-Process -Name "No-Comment-Booking" -ErrorAction SilentlyContinue) {
+$output = Join-Path $DistPath "No-Comment-Booking.exe"
+$runningOutput = Get-Process -Name "No-Comment-Booking" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and ([IO.Path]::GetFullPath($_.Path) -eq [IO.Path]::GetFullPath($output)) }
+if ($runningOutput) {
     throw "Close No-Comment-Booking.exe before rebuilding it."
 }
     & $python -m PyInstaller `
@@ -23,9 +29,11 @@ if (Get-Process -Name "No-Comment-Booking" -ErrorAction SilentlyContinue) {
     --collect-all selenium `
     --collect-all uvicorn `
     --collect-all fastapi `
+    --collect-all qrcode `
+    --collect-all tzdata `
     --add-data "${static};provtidsbevakaren\static" `
     --name No-Comment-Booking `
-    --distpath (Join-Path $root "dist") `
+    --distpath $DistPath `
     --workpath (Join-Path $root "build") `
     --specpath (Join-Path $root "build") `
     (Join-Path $root "run.py")

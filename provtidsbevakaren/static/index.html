@@ -140,6 +140,12 @@
                   <p>Grunduppgifter som behövs för sökningen.</p>
                 </div>
               </div>
+              <div class="auth-actions">
+                <button id="bankidButton" class="button secondary" type="button">
+                  Anslut Mobilt BankID
+                </button>
+                <span id="bankidSummary" class="muted">Inte anslutet</span>
+              </div>
               <div class="form-grid">
                 <label
                   >Bevakningens namn *<input
@@ -156,39 +162,28 @@
                     pattern="[0-9]{8}-?[0-9]{4}"
                     required
                 /></label>
-                <label
-                  >Behörighets-ID *<input
-                    name="licence_id"
-                    type="number"
-                    min="1"
-                    value="23"
-                    required
-                /></label>
-                <label
-                  >Provtyp-ID *<input
-                    name="examination_type_id"
-                    type="number"
-                    min="1"
-                    value="52"
-                    required
-                /></label>
-                <label
-                  >Plats-ID *<input
-                    name="location_id"
-                    type="number"
-                    min="1"
-                    value="1000130"
-                    required
-                /></label>
-                <label
-                  >Närliggande plats-ID:n<input
-                    name="nearby_location_ids"
-                    inputmode="numeric"
-                    aria-describedby="nearbyHelp"
-                  /><small id="nearbyHelp"
-                    >Separera flera ID:n med komma.</small
-                  ></label
-                >
+                <label>Behörighet *
+                  <select name="licence_id" required disabled>
+                    <option value="">Anslut BankID för att hämta alternativ</option>
+                  </select>
+                </label>
+                <label>Provtyp *
+                  <select name="examination_type_id" required disabled>
+                    <option value="">Välj behörighet först</option>
+                  </select>
+                </label>
+                <label class="wide-field">Sök provort
+                  <input id="locationSearch" type="search" placeholder="Skriv ett ortsnamn" autocomplete="off" />
+                </label>
+                <label>Huvudort *
+                  <select name="location_id" required disabled>
+                    <option value="">Anslut BankID för att indexera orter</option>
+                  </select>
+                </label>
+                <label>Närliggande orter
+                  <select name="nearby_location_ids" multiple size="5" disabled></select>
+                  <small id="nearbyHelp">Välj en eller flera orter.</small>
+                </label>
               </div>
             </article>
 
@@ -201,7 +196,7 @@
                 </div>
               </div>
               <div class="form-grid">
-                <label>Från datum<input name="date_from" type="date" /></label>
+                <label>Från datum<input name="date_from" type="date" required /></label>
                 <label>Till datum<input name="date_to" type="date" /></label>
                 <label
                   >Tidigast<input
@@ -346,6 +341,27 @@
               <summary>Avancerade provinställningar</summary>
               <div class="form-grid advanced-grid">
                 <label
+                  >Manuellt Behörighets-ID<input
+                    name="manual_licence_id"
+                    type="number"
+                    min="1"
+                /></label>
+                <label
+                  >Manuellt Provtyp-ID<input
+                    name="manual_examination_type_id"
+                    type="number"
+                    min="1"
+                /></label>
+                <label
+                  >Manuellt Plats-ID<input
+                    name="manual_location_id"
+                    type="number"
+                    min="1"
+                /></label>
+                <button id="manualIdsButton" class="button secondary" type="button">
+                  Använd manuella ID:n
+                </button>
+                <label
                   >Fordonstyp-ID<input
                     name="vehicle_type_id"
                     type="number"
@@ -433,7 +449,29 @@
         hidden
         >Öppna säker webbläsare</a
       >
+      <button id="reservationBook" class="button primary full" type="button" hidden>
+        Boka med Pay later
+      </button>
       <button id="dialogOk" class="button secondary full">Fortsätt</button>
+    </dialog>
+
+    <dialog id="bankidDialog" class="event-dialog bankid-dialog">
+      <button id="bankidClose" class="dialog-close" aria-label="Stäng">×</button>
+      <div class="dialog-icon bankid-icon">ID</div>
+      <h2>Mobile BankID</h2>
+      <p id="bankidStatus">Förbereder säker inloggning…</p>
+      <img id="bankidQr" class="bankid-qr" alt="Roterande QR-kod för Mobilt BankID" hidden />
+      <p id="bankidCountdown" class="muted"></p>
+      <a id="bankidOpen" class="button primary full" href="/api/bankid/open">
+        Öppna BankID på den här enheten
+      </a>
+      <button id="bankidFallback" class="button secondary full" type="button">
+        Använd säker webbläsarfallback
+      </button>
+      <button id="bankidRetry" class="button secondary full" type="button" hidden>
+        Försök igen
+      </button>
+      <button id="bankidCancel" class="button ghost full" type="button">Avbryt</button>
     </dialog>
   </body>
 </html>
