@@ -11,9 +11,9 @@ if (-not (Test-Path -LiteralPath $python)) {
     & $python -m pip install -e ".[dev]"
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
 
-$output = Join-Path $root "dist\Provtidsbevakaren.exe"
-if (Get-Process -Name "Provtidsbevakaren" -ErrorAction SilentlyContinue) {
-    throw "Close Provtidsbevakaren.exe before rebuilding it."
+$output = Join-Path $root "dist\No-Comment-Booking.exe"
+if (Get-Process -Name "No-Comment-Booking" -ErrorAction SilentlyContinue) {
+    throw "Close No-Comment-Booking.exe before rebuilding it."
 }
     & $python -m PyInstaller `
     --noconfirm `
@@ -24,7 +24,7 @@ if (Get-Process -Name "Provtidsbevakaren" -ErrorAction SilentlyContinue) {
     --collect-all uvicorn `
     --collect-all fastapi `
     --add-data "${static};provtidsbevakaren\static" `
-    --name Provtidsbevakaren `
+    --name No-Comment-Booking `
     --distpath (Join-Path $root "dist") `
     --workpath (Join-Path $root "build") `
     --specpath (Join-Path $root "build") `

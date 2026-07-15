@@ -1,26 +1,28 @@
-# Provtidsbevakaren
+# No-Comment-Booking
 
-En local-first tjänst som bevakar provtider, filtrerar träffar och kan notifiera,
-reservera eller boka med **Pay later/faktura**. Standardläget körs helt lokalt
-och öppnas som ett modernt webbgränssnitt utan konsolfönster.
+A local-first service that monitors driving-test appointments, filters matching
+slots, and can notify, reserve, or book using **Pay later/invoice**. The default
+mode runs entirely on the user's computer and opens a modern web interface
+without requiring a console window.
 
-Projektet har även ett färdigt, separat serverläge. Det är avsiktligt spärrat
-tills driftmiljö, HTTPS, fjärrwebbläsare och hemligheter har konfigurerats.
-Ingen publik instans distribueras från detta repository.
+The project also includes a complete, separate server mode. It is intentionally
+disabled until the hosting environment, HTTPS, remote browser, and secrets have
+been configured. This repository does not deploy a public instance.
 
-## Local mode – standard
+## Local mode (default)
 
-1. Ladda ned `Provtidsbevakaren.exe` från en release eller bygg den själv.
-2. Dubbelklicka på filen.
-3. Programmet startar en server endast på `127.0.0.1` och öppnar kontrollpanelen.
-4. Fyll i inställningarna och starta bevakningen.
-5. När inloggning behövs öppnas ett privat Chrome/Edge-fönster för BankID.
+1. Download `No-Comment-Booking.exe` from a release or build it yourself.
+2. Double-click the file.
+3. The application starts a server bound only to `127.0.0.1` and opens the dashboard.
+4. Enter your settings and start monitoring.
+5. When authentication is required, a private Chrome or Edge window opens for BankID.
 
-Samma webbläsarsession hålls öppen för reservation och manuell slutföring.
-Trafikverkets cookies finns bara i processminnet och raderas vid stopp. Formulär,
-personnummer och webhook sparas inte lokalt efter att programmet stängts.
+The same browser session remains open for reservation and manual completion.
+Trafikverket cookies exist only in process memory and are deleted when the
+application stops. Form data, personal identity numbers, and webhook URLs are
+not persisted after the program closes.
 
-### Köra från källkod
+### Run from source
 
 ```powershell
 python -m venv .venv
@@ -28,7 +30,7 @@ python -m venv .venv
 .venv\Scripts\python run.py
 ```
 
-### Test och EXE-bygge
+### Tests and executable build
 
 ```powershell
 .venv\Scripts\python -m pytest
@@ -36,27 +38,27 @@ python -m venv .venv
 powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
 ```
 
-Den färdiga filen skapas som `dist\Provtidsbevakaren.exe`.
+The executable is created at `dist\No-Comment-Booking.exe`.
 
-## Körlägen
+## Operating modes
 
-| Egenskap | Local mode | Server mode |
+| Capability | Local mode | Server mode |
 |---|---|---|
-| Standard | Ja | Nej, explicit spärrat |
-| UI | Lokal webbläsare | Publik HTTPS-webbplats |
-| Sessionscookies | Endast processminne | Isolerat processminne per användare |
-| Konfiguration | Endast minne | Krypterad SQLite |
-| BankID-webbläsare | Lokal Chrome/Edge | Isolerad Remote WebDriver |
-| Åtkomst | Engångstoken på localhost | Lösenord, signerad HttpOnly-cookie och CSRF |
+| Default | Yes | No, explicitly disabled |
+| Interface | Local browser | Public HTTPS website |
+| Session cookies | Process memory only | Isolated process memory per user |
+| Configuration | Memory only | Encrypted SQLite |
+| BankID browser | Local Chrome or Edge | Isolated Remote WebDriver |
+| Access control | One-time localhost token | Password, signed HttpOnly cookie, and CSRF |
 
-## Aktivera server mode senare
+## Enabling server mode later
 
-Serverläget startar inte om något obligatoriskt skydd saknas.
+Server mode refuses to start when any mandatory protection is missing.
 
-1. Sätt upp en HTTPS-reverse proxy.
-2. Sätt upp en isolerad Selenium-kompatibel Remote WebDriver och en autentiserad
-   viewer/noVNC-adress för användaren.
-3. Skapa hemligheter lokalt:
+1. Configure an HTTPS reverse proxy.
+2. Configure an isolated Selenium-compatible Remote WebDriver and an
+   authenticated viewer/noVNC URL for each user.
+3. Generate secrets locally:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -64,29 +66,30 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 python -m provtidsbevakaren.launcher --hash-password
 ```
 
-4. Kopiera `.env.server.example` till en hemlig miljökonfiguration och ange:
+4. Copy `.env.server.example` to a private environment configuration and set
    `APP_SECRET_KEY`, `DATA_ENCRYPTION_KEY`, `SERVER_USERS_JSON`, `PUBLIC_ORIGIN`,
-   `ALLOWED_HOSTS`, `REMOTE_WEBDRIVER_URL` och `REMOTE_BROWSER_VIEW_URL`.
-5. Sätt sist `APP_MODE=server` och `ENABLE_SERVER_MODE=true`.
-6. Starta containern bakom HTTPS och verifiera `/api/health`.
+   `ALLOWED_HOSTS`, `REMOTE_WEBDRIVER_URL`, and `REMOTE_BROWSER_VIEW_URL`.
+5. Finally set `APP_MODE=server` and `ENABLE_SERVER_MODE=true`.
+6. Start the container behind HTTPS and verify `/api/health`.
 
-Exempel på format för användare, där hashvärdet kommer från kommandot ovan:
+Example user configuration, where the hash is generated by the command above:
 
 ```json
 {"alfred":"pbkdf2_sha256$600000$..."}
 ```
 
-Miljöfilen ska aldrig checkas in. Mer information finns i
-[arkitekturdokumentet](docs/ARCHITECTURE.md) och [säkerhetsguiden](docs/SECURITY.md).
+Never commit the environment file. See the
+[architecture documentation](docs/ARCHITECTURE.md) and
+[security guide](docs/SECURITY.md) for details.
 
-## Viktiga garantier
+## Safety guarantees
 
-- Bokning sker aldrig innan servern har bekräftat exakt datum, tid och plats.
-- Muterande reservations- och faktura-anrop återförs inte automatiskt.
-- Vid bokningsfel öppnas reservationssidan i samma autentiserade session.
-- Varje användare har ett separat bevakningsjobb och separat webbläsarsession.
-- Loggar och API-svar exponerar inte personnummer, cookies eller webhook-adresser.
-- Serverläge kräver HTTPS, signerad session, CSRF, krypterad lagring och
-  explicit aktivering.
+- Booking never starts until the server has confirmed the exact date, time, and location.
+- Mutating reservation and invoice requests are never retried automatically.
+- If booking fails, the reservation page opens in the same authenticated session.
+- Every user has a separate monitoring job and browser session.
+- Logs and API responses do not expose identity numbers, cookies, or webhook URLs.
+- Server mode requires HTTPS, signed sessions, CSRF protection, encrypted storage,
+  and explicit activation.
 
-Projektet är inte en officiell tjänst från Trafikverket.
+No-Comment-Booking is not an official Trafikverket service.
