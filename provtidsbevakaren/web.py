@@ -198,6 +198,14 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         registry.for_user(session.user_id).cancel_authentication()
         return {"status": "cancelled"}
 
+    @app.post("/api/bankid/retry")
+    async def retry_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+        try:
+            registry.for_user(session.user_id).retry_authentication()
+        except RuntimeConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"status": "starting"}
+
     @app.post("/api/bankid/browser-fallback")
     async def browser_fallback(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
         registry.for_user(session.user_id).use_browser_fallback()

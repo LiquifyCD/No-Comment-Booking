@@ -69,6 +69,7 @@ class MonitorJob:
         self._auth_thread: threading.Thread | None = None
         self._force_browser_fallback = threading.Event()
         self._cancel_authentication = threading.Event()
+        self._retry_authentication = threading.Event()
         self._pending_booking: dict[str, Any] | None = None
         self._pending_done = threading.Event()
         self._booking_lock = threading.Lock()
@@ -150,25 +151,33 @@ class MonitorJob:
     def _integrated_authentication(self) -> None:
         self._force_browser_fallback.clear()
         self._cancel_authentication.clear()
-        try:
-            self._bankid.authenticate(
-                validator=self._client.ensure_authorized,
-                status_callback=self._status,
-                external_cancel=self._stop_event,
-            )
-        except engine.BotError as exc:
-            if self._stop_event.is_set():
-                raise
-            if not self._force_browser_fallback.is_set():
+        self._retry_authentication.clear()
+        while True:
+            try:
+                self._bankid.authenticate(
+                    validator=self._client.ensure_authorized,
+                    status_callback=self._status,
+                    external_cancel=self._stop_event,
+                )
+                return
+            except engine.BotError as exc:
+                if self._stop_event.is_set():
+                    raise
                 self.events.add(
                     "warning",
                     f"Den integrerade BankID-inloggningen kunde inte fortsätta: {exc}. "
-                    "Välj webbläsarfallback eller avbryt.",
+                    "Försök igen, välj webbläsarfallback eller avbryt.",
                 )
-                while not self._force_browser_fallback.wait(0.2):
+                while True:
                     if self._stop_event.is_set() or self._cancel_authentication.is_set():
                         raise
-            self._browser_authentication()
+                    if self._force_browser_fallback.is_set():
+                        self._browser_authentication()
+                        return
+                    if self._retry_authentication.wait(0.2):
+                        self._retry_authentication.clear()
+                        self.events.add("authentication", "Ett nytt BankID-försök startar.")
+                        break
 
     def _browser_authentication(self) -> None:
         self.events.add(
@@ -222,6 +231,17 @@ class MonitorJob:
     def cancel_authentication(self) -> None:
         self._cancel_authentication.set()
         self._bankid.cancel()
+
+    def retry_authentication(self) -> None:
+        with self._lock:
+            authentication_active = bool(
+                (self._auth_thread and self._auth_thread.is_alive())
+                or (self._thread and self._thread.is_alive())
+            )
+        if authentication_active and self._bankid.snapshot()["state"] == "error":
+            self._retry_authentication.set()
+            return
+        self.start_authentication()
 
     def use_browser_fallback(self) -> None:
         self._force_browser_fallback.set()
