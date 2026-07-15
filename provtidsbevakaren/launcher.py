@@ -57,7 +57,7 @@ def run() -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Provtidsbevakaren")
+    parser = argparse.ArgumentParser(description="No-Comment-Booking")
     parser.add_argument("--hash-password", action="store_true")
     args = parser.parse_args()
     if args.hash_password:

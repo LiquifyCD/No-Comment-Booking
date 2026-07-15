@@ -289,7 +289,7 @@ async function bootstrap() {
       else {
         $("#loginView").hidden = false;
         $("#loginError").textContent =
-          "Starta gränssnittet genom Provtidsbevakaren.exe.";
+          "Start the interface through No-Comment-Booking.exe.";
       }
     } else throw error;
   }
@@ -359,7 +359,7 @@ $("#logoutButton").addEventListener("click", async () => {
 });
 $("#exitButton").addEventListener("click", async () => {
   if (
-    confirm("Stäng Provtidsbevakaren och radera den tillfälliga sessionen?")
+    confirm("Close No-Comment-Booking and delete the temporary session?")
   ) {
     await api("/api/app/exit", { method: "POST", body: "{}" });
     document.body.innerHTML =

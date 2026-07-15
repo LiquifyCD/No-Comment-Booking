@@ -71,7 +71,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
             registry.shutdown()
 
     app = FastAPI(
-        title="Provtidsbevakaren",
+        title="No-Comment-Booking",
         version=__version__,
         docs_url=None,
         redoc_url=None,
@@ -218,7 +218,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         sent = await asyncio.to_thread(
             engine.notify_discord,
             payload.discord_webhook_url,
-            f"✅ [{payload.name}] Testnotis från Provtidsbevakaren",
+            f"✅ [{payload.name}] Test notification from No-Comment-Booking",
         )
         if not sent:
             raise HTTPException(status_code=502, detail="Discord-testet misslyckades")

@@ -1077,7 +1077,8 @@ def main(argv: list[str] | None = None) -> int:
             if not cfg.discord_webhook_url:
                 raise BotError("Discord-notiser är avstängda i inställningarna.")
             if not notify_discord(
-                cfg.discord_webhook_url, f"✅ [{cfg.name}] Testnotis från provtidsbevakaren"
+                cfg.discord_webhook_url,
+                f"✅ [{cfg.name}] Test notification from No-Comment-Booking",
             ):
                 raise BotError("Discord-testet misslyckades.")
             LOGGER.info("Discord-testet lyckades.")

@@ -3,7 +3,7 @@ requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "provtidsbevakaren"
+name = "no-comment-booking"
 version = "2.0.0"
 description = "Local-first monitoring service with an opt-in server runtime"
 requires-python = ">=3.11"
@@ -20,7 +20,7 @@ dependencies = [
 dev = ["httpx2>=2.7,<3", "pyinstaller>=6.11,<7", "pytest>=8.3,<9", "ruff>=0.12,<1"]
 
 [project.scripts]
-provtidsbevakaren = "provtidsbevakaren.launcher:main"
+no-comment-booking = "provtidsbevakaren.launcher:main"
 
 [tool.setuptools.package-data]
 provtidsbevakaren = ["static/*.html", "static/*.css", "static/*.js"]
