@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,8 +19,8 @@ VALID_CONFIG = {
     "examination_type_id": 52,
     "location_id": 10,
     "nearby_location_ids": [],
-    "date_from": "2026-08-01",
-    "date_to": "2026-08-31",
+    "date_from": (date.today() + timedelta(days=1)).isoformat(),
+    "date_to": (date.today() + timedelta(days=31)).isoformat(),
     "earliest_time": "08:00",
     "latest_time": "17:00",
     "allowed_weekdays": [0, 1, 2, 3, 4],
@@ -72,9 +73,34 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.0.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.1.0"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
+
+    def test_bankid_and_catalog_endpoints_keep_sensitive_input_in_request_body(self):
+        bootstrap = self.login()
+        headers = {"X-CSRF-Token": bootstrap["csrfToken"]}
+        job = self.app.state.registry.for_user("local")
+        with patch.object(job, "start_authentication") as start:
+            response = self.client.post("/api/bankid/start", json={}, headers=headers)
+        self.assertEqual(200, response.status_code)
+        start.assert_called_once()
+        with patch.object(job, "bankid_qr_svg", return_value=b"<svg/>"):
+            response = self.client.get("/api/bankid/qr.svg")
+        self.assertEqual("image/svg+xml", response.headers["content-type"])
+        with patch.object(
+            job,
+            "refresh_catalog",
+            return_value={"licences": [], "examinationTypes": [], "locations": []},
+        ) as refresh:
+            response = self.client.post(
+                "/api/catalog/refresh",
+                json={"ssn": "00000000-0000", "licence_id": 23},
+                headers=headers,
+            )
+        self.assertEqual(200, response.status_code)
+        self.assertNotIn("00000000", str(response.request.url))
+        refresh.assert_called_once_with("00000000-0000", 23)
 
 
 if __name__ == "__main__":

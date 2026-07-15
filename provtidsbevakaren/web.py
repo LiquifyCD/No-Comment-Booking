@@ -47,11 +47,17 @@ class MonitorConfigPayload(BaseModel):
     discord_webhook_url: str = ""
     auto_reserve: bool = False
     auto_book: bool = False
+    timezone: str = Field(default="Europe/Stockholm", min_length=1, max_length=80)
 
 
 class DiscordPayload(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     discord_webhook_url: str = Field(min_length=1, max_length=300)
+
+
+class CatalogPayload(BaseModel):
+    ssn: str = Field(min_length=12, max_length=13)
+    licence_id: int = Field(default=0, ge=0)
 
 
 def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> FastAPI:
@@ -178,6 +184,84 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         after: int = 0, session: UserSession = Depends(current_session)
     ) -> dict[str, Any]:
         return registry.for_user(session.user_id).snapshot(max(0, after))
+
+    @app.post("/api/bankid/start")
+    async def start_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+        try:
+            registry.for_user(session.user_id).start_authentication()
+        except RuntimeConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"status": "starting"}
+
+    @app.post("/api/bankid/cancel")
+    async def cancel_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+        registry.for_user(session.user_id).cancel_authentication()
+        return {"status": "cancelled"}
+
+    @app.post("/api/bankid/retry")
+    async def retry_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+        try:
+            registry.for_user(session.user_id).retry_authentication()
+        except RuntimeConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"status": "starting"}
+
+    @app.post("/api/bankid/browser-fallback")
+    async def browser_fallback(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+        registry.for_user(session.user_id).use_browser_fallback()
+        return {"status": "starting"}
+
+    @app.get("/api/bankid/qr.svg")
+    async def bankid_qr(session: UserSession = Depends(current_session)) -> Response:
+        try:
+            image = registry.for_user(session.user_id).bankid_qr_svg()
+        except engine.BotError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return Response(content=image, media_type="image/svg+xml")
+
+    @app.get("/api/bankid/open")
+    async def open_bankid(session: UserSession = Depends(current_session)) -> Response:
+        try:
+            uri = registry.for_user(session.user_id).bankid_uri()
+        except engine.BotError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return RedirectResponse(uri, status_code=307)
+
+    @app.get("/api/catalog")
+    async def cached_catalog(session: UserSession = Depends(current_session)) -> dict[str, Any]:
+        value = registry.for_user(session.user_id).cached_catalog()
+        if value is None:
+            raise HTTPException(status_code=404, detail="Ingen katalog har hämtats ännu")
+        return value
+
+    @app.post("/api/catalog/refresh")
+    async def refresh_catalog(
+        payload: CatalogPayload,
+        session: UserSession = Depends(csrf_session),
+    ) -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(
+                registry.for_user(session.user_id).refresh_catalog,
+                payload.ssn,
+                payload.licence_id,
+            )
+        except engine.AuthenticationRequiredError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except RuntimeConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except engine.BotError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/api/reservation/book")
+    async def book_reservation(session: UserSession = Depends(csrf_session)) -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(
+                registry.for_user(session.user_id).complete_pending_booking
+            )
+        except RuntimeConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except engine.BotError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @app.post("/api/monitor/start")
     async def start_monitor(

@@ -25,7 +25,8 @@ body {
   min-width: 320px;
 }
 button,
-input {
+input,
+select {
   font: inherit;
 }
 button,
@@ -311,7 +312,8 @@ label small {
   font-weight: 400;
   color: var(--muted);
 }
-input {
+input,
+select {
   width: 100%;
   border: 1px solid #ccd8d3;
   border-radius: 10px;
@@ -320,12 +322,30 @@ input {
   background: #fff;
   outline: none;
 }
-input:focus {
+input:focus,
+select:focus {
   border-color: var(--green);
   box-shadow: 0 0 0 3px #1e8a6819;
 }
-input:invalid:not(:placeholder-shown) {
+form.was-validated input:invalid,
+form.was-validated select:invalid {
   border-color: #c75a55;
+}
+.wide-field {
+  grid-column: 1 / -1;
+}
+.auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: -2px 0 20px 51px;
+}
+select[multiple] {
+  min-height: 126px;
+  padding: 6px;
+}
+select option {
+  padding: 7px 8px;
 }
 .weekday-field {
   border: 0;
@@ -653,6 +673,25 @@ input:invalid:not(:placeholder-shown) {
 }
 .event-dialog .button + .button {
   margin-top: 9px;
+}
+.bankid-dialog {
+  width: min(460px, calc(100% - 32px));
+}
+.bankid-icon {
+  font-size: 14px;
+  font-weight: 850;
+}
+.bankid-qr {
+  width: min(280px, 100%);
+  aspect-ratio: 1;
+  display: block;
+  margin: 18px auto;
+  border: 10px solid #fff;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.bankid-qr[hidden] {
+  display: none;
 }
 @media (max-width: 900px) {
   .sidebar {
