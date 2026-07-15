@@ -151,6 +151,13 @@ class ClientTests(unittest.TestCase):
         with self.assertRaisesRegex(bot.AuthenticationRequiredError, "inloggad"):
             self.client.post("occasion-bundles")
 
+    def test_authorization_must_be_explicitly_confirmed(self):
+        self.client.session.post.return_value = self.response(payload={"data": False})
+        with self.assertRaises(bot.AuthenticationRequiredError):
+            self.client.ensure_authorized()
+        self.client.session.post.return_value = self.response(payload={"data": True})
+        self.client.ensure_authorized()
+
 
 class BrowserTests(unittest.TestCase):
     def test_manual_login_imports_only_trafikverket_cookies(self):
@@ -284,10 +291,14 @@ class MonitorTests(unittest.TestCase):
                 event_callback=events,
             )
         client.create_reservation.assert_called_once()
-        events.assert_called_once_with(
-            "reserved",
+        self.assertEqual("reserved", events.call_args.args[0])
+        event_payload = events.call_args.args[1]
+        self.assertEqual(
             {"date": "2026-08-03", "time": "09:00", "location": "Teststad"},
+            {key: value for key, value in event_payload.items() if not key.startswith("_")},
         )
+        self.assertIn("_booking_session", event_payload)
+        self.assertIn("_bundle_reservation", event_payload)
         self.assertEqual(1, client.occasion_bundles.call_count)
         self.assertEqual(2, notify.call_count)
 

@@ -6,6 +6,12 @@ const state = {
   lastEvent: 0,
   pollTimer: null,
   polling: false,
+  catalog: { licences: [], examinationTypes: [], locations: [] },
+  qrVersion: 0,
+  authenticated: false,
+  savedConfig: null,
+  catalogAttempted: false,
+  nearbySelection: new Set(),
 };
 const $ = (selector) => document.querySelector(selector);
 const form = $("#monitorForm");
@@ -48,6 +54,90 @@ function integer(name) {
 function nullable(name) {
   return form.elements[name].value || null;
 }
+function localDateValue(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function enforceDateMinimum() {
+  const today = localDateValue();
+  const from = form.elements.date_from;
+  const to = form.elements.date_to;
+  from.min = today;
+  to.min = today;
+  if (!from.value || from.value < today) {
+    const changed = Boolean(from.value && from.value < today);
+    from.value = today;
+    if (changed) toast(`Från datum flyttades till idag (${today})`);
+  }
+  if (to.value && to.value < today) to.value = "";
+}
+function ensureSavedOption(select, value, label) {
+  if (!value) return;
+  const id = String(value);
+  if (![...select.options].some((option) => option.value === id)) {
+    select.add(new Option(`${label} (ID ${id})`, id));
+  }
+  select.disabled = false;
+  select.value = id;
+}
+function setOptions(select, items, placeholder, selectedValue = "") {
+  select.textContent = "";
+  select.add(new Option(placeholder, ""));
+  for (const item of items) {
+    const label = item.description ? `${item.name} — ${item.description}` : item.name;
+    select.add(new Option(label, String(item.id)));
+  }
+  select.disabled = items.length === 0;
+  if (selectedValue) ensureSavedOption(select, selectedValue, "Unavailable saved selection");
+}
+function filterLocations(query = "") {
+  const wanted = query.trim().toLocaleLowerCase("sv-SE");
+  const locations = state.catalog.locations.filter((item) =>
+    item.name.toLocaleLowerCase("sv-SE").includes(wanted),
+  );
+  const main = form.elements.location_id;
+  const nearby = form.elements.nearby_location_ids;
+  const selectedMain = main.value || state.savedConfig?.location_id || "";
+  const selectedNearby = new Set(
+    state.nearbySelection,
+  );
+  setOptions(main, locations, "Välj en provort", selectedMain);
+  nearby.textContent = "";
+  for (const item of locations) {
+    const option = new Option(item.name, String(item.id));
+    option.selected = selectedNearby.has(option.value);
+    nearby.add(option);
+  }
+  nearby.disabled = locations.length === 0;
+}
+function applyCatalog(data) {
+  state.catalog = data;
+  setOptions(
+    form.elements.licence_id,
+    data.licences || [],
+    "Välj en behörighet",
+    form.elements.licence_id.value || state.savedConfig?.licence_id,
+  );
+  setOptions(
+    form.elements.examination_type_id,
+    data.examinationTypes || [],
+    "Välj en provtyp",
+    state.savedConfig?.examination_type_id,
+  );
+  filterLocations($("#locationSearch").value);
+}
+async function refreshCatalog(licenceId = 0) {
+  const ssn = form.elements.ssn.value.trim();
+  if (!/^\d{8}-?\d{4}$/.test(ssn)) throw new Error("Enter a valid identity number first");
+  const data = await api("/api/catalog/refresh", {
+    method: "POST",
+    body: JSON.stringify({ ssn, licence_id: Number(licenceId) || 0 }),
+  });
+  applyCatalog(data);
+  toast(`${data.locations.length} provorter indexerade`);
+}
 function collectConfig() {
   const mode = form.elements.booking_mode.value;
   return {
@@ -56,11 +146,7 @@ function collectConfig() {
     licence_id: integer("licence_id"),
     examination_type_id: integer("examination_type_id"),
     location_id: integer("location_id"),
-    nearby_location_ids: form.elements.nearby_location_ids.value
-      .split(",")
-      .map((v) => v.trim())
-      .filter(Boolean)
-      .map(Number),
+    nearby_location_ids: [...state.nearbySelection].map(Number),
     vehicle_type_id: integer("vehicle_type_id"),
     tachograph_type_id: integer("tachograph_type_id"),
     occasion_choice_id: integer("occasion_choice_id"),
@@ -76,10 +162,13 @@ function collectConfig() {
     discord_webhook_url: form.elements.discord_webhook_url.value.trim(),
     auto_reserve: mode === "reserve",
     auto_book: mode === "book",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Stockholm",
   };
 }
 function fillConfig(config) {
   if (!config) return;
+  state.savedConfig = config;
+  state.nearbySelection = new Set((config.nearby_location_ids || []).map(String));
   for (const [key, value] of Object.entries(config)) {
     if (
       [
@@ -87,15 +176,23 @@ function fillConfig(config) {
         "auto_book",
         "allowed_weekdays",
         "nearby_location_ids",
+        "licence_id",
+        "examination_type_id",
+        "location_id",
+        "timezone",
       ].includes(key)
     )
       continue;
     const input = form.elements[key];
     if (input && value !== null) input.value = value;
   }
-  form.elements.nearby_location_ids.value = (
-    config.nearby_location_ids || []
-  ).join(", ");
+  ensureSavedOption(form.elements.licence_id, config.licence_id, "Saved licence");
+  ensureSavedOption(
+    form.elements.examination_type_id,
+    config.examination_type_id,
+    "Saved examination type",
+  );
+  ensureSavedOption(form.elements.location_id, config.location_id, "Saved location");
   form.elements.booking_mode.value = config.auto_book
     ? "book"
     : config.auto_reserve
@@ -161,6 +258,48 @@ function setRuntime(runtime) {
   $("#statusDot").className =
     runtime === "error" ? "error" : active ? "active" : "";
 }
+function updateBankId(bankId) {
+  if (!bankId) return;
+  state.authenticated = Boolean(bankId.authenticated);
+  $("#bankidSummary").textContent = state.authenticated
+    ? "Anslutet"
+    : bankId.state === "pending"
+      ? "Väntar på BankID"
+      : "Inte anslutet";
+  $("#bankidButton").textContent = state.authenticated
+    ? "Uppdatera bokningsalternativ"
+    : "Anslut Mobilt BankID";
+  const dialog = $("#bankidDialog");
+  if (["starting", "pending", "error"].includes(bankId.state)) {
+    if (!dialog.open) dialog.showModal();
+    const messages = {
+      starting: "Förbereder säker inloggning…",
+      pending: "Skanna den roterande QR-koden med Mobilt BankID.",
+      error: bankId.error || "Den integrerade inloggningen kunde inte fortsätta.",
+    };
+    $("#bankidStatus").textContent = messages[bankId.state];
+    $("#bankidQr").hidden = bankId.state !== "pending";
+    $("#bankidOpen").hidden = !bankId.canOpenOnDevice;
+    $("#bankidFallback").hidden = bankId.state !== "error";
+    $("#bankidRetry").hidden = bankId.state !== "error";
+    if (bankId.qrVersion && bankId.qrVersion !== state.qrVersion) {
+      state.qrVersion = bankId.qrVersion;
+      $("#bankidQr").src = `/api/bankid/qr.svg?v=${bankId.qrVersion}`;
+    }
+    const remaining = Math.max(0, Math.ceil((bankId.expiresAt * 1000 - Date.now()) / 1000));
+    $("#bankidCountdown").textContent = remaining ? `Löper ut om ${remaining} sekunder` : "";
+  } else if (bankId.state === "complete") {
+    if (dialog.open) dialog.close();
+    const canLoadCatalog = /^\d{8}-?\d{4}$/.test(form.elements.ssn.value.trim());
+    if (!state.catalog.locations.length && !state.catalogAttempted && canLoadCatalog) {
+      state.catalogAttempted = true;
+      refreshCatalog(Number(form.elements.licence_id.value) || 0).catch((error) => {
+        toast(error.message);
+        $("#bankidSummary").textContent = "Anslutet — alternativen kunde inte hämtas";
+      });
+    }
+  } else if (bankId.state === "cancelled" && dialog.open) dialog.close();
+}
 function eventSymbol(type) {
   return (
     {
@@ -220,9 +359,9 @@ function addEvent(event) {
     "authentication",
   ].includes(event.type);
   if (important)
-    showDialog(title.textContent, event.message, event.data?.url || "");
+    showDialog(title.textContent, event.message, event.data?.url || "", event.type);
 }
-function showDialog(title, message, url = "") {
+function showDialog(title, message, url = "", eventType = "") {
   $("#dialogTitle").textContent = title;
   $("#dialogMessage").textContent = message;
   $("#dialogIcon").textContent =
@@ -230,26 +369,30 @@ function showDialog(title, message, url = "") {
   const link = $("#browserLink");
   link.hidden = !url;
   link.href = url || "#";
+  $("#reservationBook").hidden = !["reserved", "booking_error"].includes(eventType);
   $("#eventDialog").showModal();
 }
 async function poll() {
   if (state.polling) return;
   state.polling = true;
+  let continuePolling = true;
   try {
     const data = await api(`/api/events?after=${state.lastEvent}`);
     setRuntime(data.state);
+    updateBankId(data.bankId);
     for (const event of data.events) {
       state.lastEvent = Math.max(state.lastEvent, event.id);
       addEvent(event);
     }
   } catch (error) {
     if (error.status === 401) {
+      continuePolling = false;
       clearTimeout(state.pollTimer);
       showLogin();
     } else console.error(error);
   } finally {
     state.polling = false;
-    state.pollTimer = setTimeout(poll, 1000);
+    if (continuePolling) state.pollTimer = setTimeout(poll, 1000);
   }
 }
 function showLogin() {
@@ -262,6 +405,7 @@ function showApp() {
   $("#appView").hidden = false;
 }
 async function bootstrap() {
+  enforceDateMinimum();
   const health = await api("/api/health");
   state.mode = health.mode;
   try {
@@ -276,7 +420,14 @@ async function bootstrap() {
         ? "Cookies finns bara i minnet tills programmet stängs."
         : "Sessioner isoleras och känslig konfiguration krypteras.";
     fillConfig(data.config);
+    enforceDateMinimum();
     setRuntime(data.state);
+    updateBankId(data.bankId);
+    api("/api/catalog")
+      .then(applyCatalog)
+      .catch((error) => {
+        if (error.status !== 404) console.error(error);
+      });
     for (const event of data.events) {
       state.lastEvent = Math.max(state.lastEvent, event.id);
       addEvent(event);
@@ -296,6 +447,7 @@ async function bootstrap() {
 }
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  form.classList.add("was-validated");
   if (!form.reportValidity()) return;
   try {
     const config = collectConfig();
@@ -336,6 +488,86 @@ $("#discordButton").addEventListener("click", async () => {
     toast("Testnotisen skickades");
   } catch (error) {
     toast(error.message);
+  }
+});
+$("#bankidButton").addEventListener("click", async () => {
+  try {
+    if (state.authenticated) {
+      await refreshCatalog(Number(form.elements.licence_id.value) || 0);
+      return;
+    }
+    await api("/api/bankid/start", { method: "POST", body: "{}" });
+    $("#bankidStatus").textContent = "Förbereder säker inloggning…";
+    if (!$("#bankidDialog").open) $("#bankidDialog").showModal();
+  } catch (error) {
+    toast(error.message);
+  }
+});
+$("#bankidCancel").addEventListener("click", async () => {
+  await api("/api/bankid/cancel", { method: "POST", body: "{}" });
+  $("#bankidDialog").close();
+});
+$("#bankidClose").addEventListener("click", () => $("#bankidDialog").close());
+$("#bankidFallback").addEventListener("click", async () => {
+  try {
+    await api("/api/bankid/browser-fallback", { method: "POST", body: "{}" });
+    $("#bankidStatus").textContent = "Öppnar den säkra webbläsarfallbacken…";
+  } catch (error) {
+    toast(error.message);
+  }
+});
+$("#bankidRetry").addEventListener("click", async () => {
+  try {
+    await api("/api/bankid/retry", { method: "POST", body: "{}" });
+    $("#bankidStatus").textContent = "Förbereder ett nytt inloggningsförsök…";
+    $("#bankidRetry").hidden = true;
+    $("#bankidFallback").hidden = true;
+  } catch (error) {
+    toast(error.message);
+  }
+});
+form.elements.licence_id.addEventListener("change", async (event) => {
+  if (!state.authenticated || !event.target.value) return;
+  try {
+    await refreshCatalog(Number(event.target.value));
+  } catch (error) {
+    toast(error.message);
+  }
+});
+form.elements.nearby_location_ids.addEventListener("change", (event) => {
+  for (const option of event.target.options) state.nearbySelection.delete(option.value);
+  for (const option of event.target.selectedOptions)
+    state.nearbySelection.add(option.value);
+});
+$("#locationSearch").addEventListener("input", (event) =>
+  filterLocations(event.target.value),
+);
+$("#manualIdsButton").addEventListener("click", () => {
+  const mappings = [
+    ["manual_licence_id", "licence_id", "Manuell behörighet"],
+    ["manual_examination_type_id", "examination_type_id", "Manuell provtyp"],
+    ["manual_location_id", "location_id", "Manuell provort"],
+  ];
+  for (const [inputName, selectName, label] of mappings) {
+    const value = form.elements[inputName].value;
+    if (value) ensureSavedOption(form.elements[selectName], value, label);
+  }
+  toast("Manuella ID:n används");
+});
+$("#reservationBook").addEventListener("click", async () => {
+  const button = $("#reservationBook");
+  button.disabled = true;
+  try {
+    const result = await api("/api/reservation/book", { method: "POST", body: "{}" });
+    $("#eventDialog").close();
+    showDialog(
+      "Bokningen är klar",
+      `${result.date} ${result.time} — booking ID ${result.booking_id}`,
+    );
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
   }
 });
 $("#loginForm").addEventListener("submit", async (event) => {
@@ -384,6 +616,8 @@ document.querySelectorAll(".nav-link").forEach((link) =>
   }),
 );
 form.addEventListener("input", updateMetrics);
+enforceDateMinimum();
+setInterval(enforceDateMinimum, 30_000);
 bootstrap().catch((error) => {
   console.error(error);
   showLogin();

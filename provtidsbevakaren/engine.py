@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -77,6 +78,7 @@ class Config:
     discord_webhook_url: str = ""
     auto_reserve: bool = False
     auto_book: bool = False
+    timezone: str = "Europe/Stockholm"
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Config:
@@ -89,6 +91,11 @@ class Config:
 
         try:
             weekdays = raw.get("allowed_weekdays")
+            timezone_name = str(raw.get("timezone", "Europe/Stockholm")).strip()
+            date_from = raw.get("date_from")
+            if isinstance(date_from, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_from):
+                today_value = datetime.now(ZoneInfo(timezone_name)).date().isoformat()
+                date_from = max(date_from, today_value)
             config = cls(
                 name=str(raw["name"]).strip(),
                 ssn=str(raw["ssn"]).strip(),
@@ -102,7 +109,7 @@ class Config:
                 tachograph_type_id=int(raw.get("tachograph_type_id", 1)),
                 occasion_choice_id=int(raw.get("occasion_choice_id", 1)),
                 language_id=int(raw.get("language_id", 13)),
-                date_from=raw.get("date_from"),
+                date_from=date_from,
                 date_to=raw.get("date_to"),
                 earliest_time=raw.get("earliest_time"),
                 latest_time=raw.get("latest_time"),
@@ -113,8 +120,9 @@ class Config:
                 discord_webhook_url=str(raw.get("discord_webhook_url", "")).strip(),
                 auto_reserve=bool(raw.get("auto_reserve", False)),
                 auto_book=bool(raw.get("auto_book", False)),
+                timezone=timezone_name,
             )
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, ZoneInfoNotFoundError) as exc:
             raise BotError(f"Ogiltig datatyp i config: {exc}") from exc
         config.validate()
         return config
@@ -145,6 +153,12 @@ class Config:
                     raise BotError(f"{field_name} har ogiltigt format: {value}") from exc
         if self.date_from and self.date_to and self.date_from > self.date_to:
             raise BotError("date_from får inte vara senare än date_to.")
+        try:
+            local_today = datetime.now(ZoneInfo(self.timezone)).date().isoformat()
+        except ZoneInfoNotFoundError as exc:
+            raise BotError("timezone är inte en giltig IANA-tidszon.") from exc
+        if self.date_to and self.date_to < local_today:
+            raise BotError(f"date_to får inte vara tidigare än dagens datum ({local_today}).")
         if self.earliest_time and self.latest_time and self.earliest_time > self.latest_time:
             raise BotError("earliest_time får inte vara senare än latest_time.")
         if self.discord_webhook_url and not re.fullmatch(
@@ -180,6 +194,10 @@ class TrafikverketClient:
         )
         self.session.mount(
             f"{BASE_URL}/invoice-payment",
+            HTTPAdapter(max_retries=Retry(total=0, connect=0, read=0, redirect=0, status=0)),
+        )
+        self.session.mount(
+            f"{BASE_URL}/begin-authentication",
             HTTPAdapter(max_retries=Retry(total=0, connect=0, read=0, redirect=0, status=0)),
         )
 
@@ -224,6 +242,51 @@ class TrafikverketClient:
 
     def initialize(self) -> None:
         self.post("start")
+
+    def begin_authentication(self) -> dict[str, Any]:
+        return self.post("begin-authentication")
+
+    def check_authentication_status(
+        self,
+        *,
+        reference_id: str,
+        qr_start_token: str,
+        qr_start_time: str,
+        qr_start_secret: str,
+    ) -> dict[str, Any]:
+        return self.post(
+            "check-authentication-status-qr",
+            {
+                "referenceId": reference_id,
+                "qrStartToken": qr_start_token,
+                "qrStartTime": qr_start_time,
+                "qrStartSecret": qr_start_secret,
+            },
+        )
+
+    def is_authorized(self) -> dict[str, Any]:
+        return self.post("is-authorizied")
+
+    def ensure_authorized(self) -> None:
+        data = nested(self.is_authorized(), "data")
+        authorized = (
+            data
+            if isinstance(data, bool)
+            else data.get("isAuthorized")
+            if isinstance(data, dict)
+            else False
+        )
+        if authorized is not True:
+            raise AuthenticationRequiredError("BankID-inloggningen bekräftades inte av tjänsten.")
+
+    def search_information(self, booking_session: dict[str, Any]) -> dict[str, Any]:
+        return self.post("search-information", {"bookingSession": booking_session})
+
+    def licence_information(self) -> dict[str, Any]:
+        return self.post("licence-information")
+
+    def language_support(self, language_code: str = "sv_SE") -> dict[str, Any]:
+        return self.post("getLanguageSupport", {"languageCode": language_code})
 
     def booking_hindrances(self, booking_session: dict[str, Any]) -> dict[str, Any]:
         return self.post("booking-hindrances", {"bookingSession": booking_session})
@@ -470,6 +533,16 @@ def slot_key(occasion: dict[str, Any]) -> str:
         raise ApiResponseError(f"En provtid saknar fältet {exc.args[0]}") from exc
 
 
+def local_today(cfg: Config, now: datetime | None = None) -> date:
+    current = now or datetime.now(UTC)
+    return current.astimezone(ZoneInfo(cfg.timezone)).date()
+
+
+def effective_date_from(cfg: Config, now: datetime | None = None) -> str:
+    today_value = local_today(cfg, now).isoformat()
+    return max(cfg.date_from or today_value, today_value)
+
+
 def slot_matches_filters(occasion: dict[str, Any], cfg: Config) -> bool:
     try:
         date_str = str(occasion["date"])
@@ -479,7 +552,7 @@ def slot_matches_filters(occasion: dict[str, Any], cfg: Config) -> bool:
     except (KeyError, ValueError) as exc:
         raise ApiResponseError(f"Ogiltig provtid i API-svaret: {occasion}") from exc
 
-    if cfg.date_from and date_str < cfg.date_from:
+    if date_str < effective_date_from(cfg):
         return False
     if cfg.date_to and date_str > cfg.date_to:
         return False
@@ -726,7 +799,15 @@ def run_monitor(
                             )
                             LOGGER.error(failure)
                             notify_discord(cfg.discord_webhook_url, failure)
-                            emit("booking_error", {**popup_payload, "error": str(exc)})
+                            emit(
+                                "booking_error",
+                                {
+                                    **popup_payload,
+                                    "error": str(exc),
+                                    "_booking_session": booking_session,
+                                    "_bundle_reservation": bundle_reservation,
+                                },
+                            )
                             return
                         booked_message = (
                             f"✅ [{cfg.name}] BOKAT {occasion['date']} "
@@ -746,7 +827,14 @@ def run_monitor(
                     )
                     LOGGER.info(reserved_message)
                     notify_discord(cfg.discord_webhook_url, reserved_message)
-                    emit("reserved", popup_payload)
+                    emit(
+                        "reserved",
+                        {
+                            **popup_payload,
+                            "_booking_session": booking_session,
+                            "_bundle_reservation": bundle_reservation,
+                        },
+                    )
                     return
             save_seen(seen_path, seen)
             consecutive_errors = 0
