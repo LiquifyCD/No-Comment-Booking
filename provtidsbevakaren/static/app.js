@@ -518,7 +518,7 @@ $("#bankidFallback").addEventListener("click", async () => {
 });
 $("#bankidRetry").addEventListener("click", async () => {
   try {
-    await api("/api/bankid/start", { method: "POST", body: "{}" });
+    await api("/api/bankid/retry", { method: "POST", body: "{}" });
     $("#bankidStatus").textContent = "Förbereder ett nytt inloggningsförsök…";
     $("#bankidRetry").hidden = true;
     $("#bankidFallback").hidden = true;

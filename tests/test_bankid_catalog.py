@@ -216,6 +216,17 @@ class CatalogTests(unittest.TestCase):
                 )
             job.close()
 
+    def test_retry_signals_the_existing_authentication_worker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job = MonitorJob("test", load_settings({}), VolatileStateStore(), Path(directory))
+            job._bankid._state = "error"
+            job._auth_thread = Mock()
+            job._auth_thread.is_alive.return_value = True
+            job.retry_authentication()
+            self.assertTrue(job._retry_authentication.is_set())
+            job._auth_thread.is_alive.return_value = False
+            job.close()
+
 
 class DateAndReservationTests(unittest.TestCase):
     def test_past_start_date_moves_to_local_today(self):
