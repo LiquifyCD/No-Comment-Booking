@@ -1,60 +1,47 @@
-# Arkitektur
+# Architecture
 
-## Gemensamt flöde
+## Shared flow
 
 ```text
 Responsive web UI
-       │ HTTPS/localhost API
-       ▼
-FastAPI web layer ── AuthManager
-       │
-       ▼
-RuntimeRegistry ── one MonitorJob per user
-       │
-       ├── TrafikverketClient (requests, cookies only in memory)
-       ├── BrowserLoginSession (local or remote Selenium)
-       ├── Discord notifier
-       └── StateStore
-             ├── VolatileStateStore (local)
-             └── EncryptedSqliteStateStore (server)
+       | localhost/HTTPS API
+       v
+FastAPI web layer -- AuthManager
+       |
+       v
+RuntimeRegistry -- one MonitorJob per user
+       |
+       +-- BankIdFlow (memory-only challenge and rotating QR)
+       +-- BookingCatalog (licences, examination types, locations)
+       +-- TrafikverketClient (requests, memory-only cookies)
+       +-- BrowserLoginSession (explicit fallback only)
+       +-- Discord notifier
+       `-- StateStore
+             +-- VolatileStateStore (local)
+             `-- EncryptedSqliteStateStore (server)
 ```
 
-`engine.py` innehåller den gemensamma domän- och integrationslogiken för filter,
-API-anrop, reservation och bokning. `runtime.py` äger livscykel, trådar,
-race-skydd, händelsebuffert och resursstädning. `web.py` ansvarar endast för
-HTTP, autentisering, validering och statiska filer.
+`engine.py` contains domain rules and Trafikverket calls. `bankid.py` owns the integrated authentication state machine and exposes only sanitized state. `catalog.py` normalizes, translates, sorts, and deduplicates API catalog data. `runtime.py` owns lifecycle, concurrency guards, events, pending reservations, and cleanup. `web.py` handles HTTP, authentication, validation, and static assets.
 
-## Local mode
+## Authentication and catalog sequence
 
-`launcher.py` skapar en slumpmässig engångstoken, binder Uvicorn till
-`127.0.0.1` och öppnar systemets webbläsare. Token växlas omedelbart mot en
-signerad HttpOnly-cookie och tas bort ur adressfältet genom redirect.
+1. The backend starts BankID once; this mutation has retries disabled.
+2. The QR code rotates from status responses every two seconds.
+3. The frontend receives only a backend-rendered SVG and sanitized status.
+4. Completion is accepted only after a separate authorization check succeeds.
+5. The backend loads Swedish language resources and `licence-information`.
+6. Selecting a licence calls `search-information` for examination types and locations.
 
-Konfigurationen använder `VolatileStateStore`. Stopp eller avslut stänger
-Selenium, rensar `requests.Session`, tömmer lagringen och stänger servern.
+The same in-memory `requests.Session` is reused for monitoring and reservation. No Trafikverket cookie or BankID secret is persisted.
 
-## Server mode
+## Local and server modes
 
-Server mode använder samma UI och monitorlogik men byter adapters:
+Local mode exchanges a random launch token for a signed HttpOnly cookie, binds Uvicorn to `127.0.0.1`, and uses volatile storage. Shutdown clears the session, catalog, pending challenge, configuration, and cookies.
 
-- lösenordsinloggning med PBKDF2-SHA256 och rate limiting;
-- signerad Secure/HttpOnly/SameSite-cookie samt CSRF-token;
-- en isolerad `MonitorJob` per användaridentitet;
-- krypterad konfiguration i SQLite med Fernet;
-- Remote WebDriver för en isolerad serverwebbläsare;
-- extern, autentiserad viewer för BankID och manuell bokningsslutföring.
+Server mode uses password login, Secure/HttpOnly/SameSite cookies, CSRF protection, encrypted SQLite configuration, and an isolated runtime per user. It refuses to start without explicit activation, HTTPS origin, allowed hosts, credentials, separate cryptographic keys, Remote WebDriver, and a viewer URL.
 
-Serverläget har fail-closed-konfiguration. Det startar inte utan explicit flagga,
-HTTPS-origin, tillåtna hosts, användarhashar, två separata kryptonycklar samt
-Remote WebDriver- och viewer-adresser.
+## State and concurrency
 
-## Tillstånd och samtidighet
+A job moves through `idle`, `starting`, `authentication`, `authenticated`, `running`, `action_required`, `stopping`, and `error`. Locks reject overlapping authentication, catalog refresh, monitor start, and invoice completion. Catalog access is disabled during monitoring so the shared Trafikverket session cannot issue competing stateful calls.
 
-Ett jobb rör sig mellan `idle`, `starting`, `authentication`, `running`,
-`action_required`, `stopping` och `error`. Lås skyddar start/stopp och endast ett
-jobb kan köras per användare. Stoppsignalen delas med inloggning och monitorloop.
-Resurser stängs i `finally`, även efter nätverks- eller bokningsfel.
-
-Händelser har monotona ID:n i en begränsad ringbuffer. Frontend gör
-självsekvenserad polling, vilket förhindrar överlappande statusanrop och kan
-återuppta från senaste ID utan duplicerade notifieringar.
+Events use monotonic IDs in a bounded buffer. Frontend polling is self-sequenced, preventing overlapping requests and duplicate rendering. Date minimums are refreshed in the UI and recalculated in the configured IANA timezone for every backend validation and slot filter.
