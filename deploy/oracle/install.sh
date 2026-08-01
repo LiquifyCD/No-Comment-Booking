@@ -104,6 +104,7 @@ unset app_password app_secret data_key users_json
 
 install -m 0644 "$SOURCE_DIR/deploy/oracle/no-comment-booking.service" /etc/systemd/system/no-comment-booking.service
 install -m 0755 "$SOURCE_DIR/deploy/oracle/backup.sh" /usr/local/sbin/no-comment-booking-backup
+install -m 0755 "$SOURCE_DIR/deploy/oracle/smoke_test.py" /usr/local/sbin/no-comment-booking-smoke-test
 install -m 0644 "$SOURCE_DIR/deploy/oracle/no-comment-booking-backup.service" /etc/systemd/system/no-comment-booking-backup.service
 install -m 0644 "$SOURCE_DIR/deploy/oracle/no-comment-booking-backup.timer" /etc/systemd/system/no-comment-booking-backup.timer
 

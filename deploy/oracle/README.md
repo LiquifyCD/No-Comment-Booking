@@ -25,6 +25,7 @@ When `PUBLIC_HOST` is an IP address, Caddy uses its internal CA. Public health c
 sudo systemctl status no-comment-booking caddy fail2ban --no-pager
 curl -fsS http://127.0.0.1:8080/api/health
 curl -kfsS https://<public-ip>/api/health
+sudo no-comment-booking-smoke-test https://<public-ip> --insecure
 sudo systemctl restart no-comment-booking
 sudo reboot
 ```
