@@ -35,8 +35,8 @@ After reboot, repeat both health checks and inspect `systemctl is-active no-comm
 ## Redeploy
 
 ```bash
-sudo git -C /opt/no-comment-booking/source fetch --prune origin
-sudo git -C /opt/no-comment-booking/source checkout --detach origin/main
+sudo git -C /opt/no-comment-booking/source fetch --prune --depth 1 origin main
+sudo git -C /opt/no-comment-booking/source checkout --detach FETCH_HEAD
 sudo /opt/no-comment-booking/venv/bin/python -m pip install --no-cache-dir --force-reinstall /opt/no-comment-booking/source
 sudo systemctl restart no-comment-booking
 curl -fsS http://127.0.0.1:8080/api/health

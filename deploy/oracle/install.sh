@@ -51,8 +51,8 @@ install -d -o nocomment -g nocomment -m 0700 /var/lib/no-comment-booking/data
 install -d -o root -g root -m 0755 /opt/no-comment-booking
 
 if [[ -d "$SOURCE_DIR/.git" ]]; then
-  git -C "$SOURCE_DIR" fetch --prune origin
-  git -C "$SOURCE_DIR" checkout --detach "origin/$SOURCE_REF"
+  git -C "$SOURCE_DIR" fetch --prune --depth 1 origin "$SOURCE_REF"
+  git -C "$SOURCE_DIR" checkout --detach FETCH_HEAD
 else
   git clone --branch "$SOURCE_REF" --depth 1 "$SOURCE_REPOSITORY" "$SOURCE_DIR"
 fi
