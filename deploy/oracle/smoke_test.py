@@ -1,5 +1,6 @@
 #!/opt/no-comment-booking/venv/bin/python
 import argparse
+import sqlite3
 import time
 from pathlib import Path
 
@@ -15,6 +16,9 @@ def main() -> None:
     )
     parser.add_argument("--insecure", action="store_true")
     parser.add_argument("--exercise-monitor", action="store_true")
+    parser.add_argument(
+        "--database-path", default="/var/lib/no-comment-booking/data/service.db"
+    )
     args = parser.parse_args()
 
     credentials = dict(
@@ -65,7 +69,18 @@ def main() -> None:
 
     if args.exercise_monitor:
         config = bootstrap_data.get("config")
-        assert config, "No saved monitor configuration is available"
+        synthetic_config = config is None
+        if synthetic_config:
+            config = {
+                "name": "Deployment smoke test",
+                "ssn": "00000000-0000",
+                "licence_id": 1,
+                "examination_type_id": 1,
+                "location_id": 1,
+                "poll_interval_seconds": 60,
+                "auto_reserve": False,
+                "auto_book": False,
+            }
         csrf_headers = {"X-CSRF-Token": bootstrap_data["csrfToken"]}
 
         initial_stop = session.post(
@@ -104,6 +119,12 @@ def main() -> None:
             )
             stopped.raise_for_status()
             assert stopped.json()["status"] == "stopped"
+
+        if synthetic_config:
+            with sqlite3.connect(args.database_path) as database:
+                database.execute(
+                    "DELETE FROM user_state WHERE user_id=?", (bootstrap_data["user"],)
+                )
 
         print("Monitor start, status polling, and stop: OK")
 
