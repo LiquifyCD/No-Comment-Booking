@@ -1,0 +1,17 @@
+frostbyte.158-179-207-206.sslip.io {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+	log {
+		output file /var/log/caddy/frostbyte-access.json {
+			roll_size 5MiB
+			roll_keep 3
+			roll_keep_for 168h
+		}
+		format json
+	}
+}

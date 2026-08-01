@@ -394,7 +394,7 @@ async function poll() {
     } else console.error(error);
   } finally {
     state.polling = false;
-    if (continuePolling) state.pollTimer = setTimeout(poll, 1000);
+    if (continuePolling) state.pollTimer = setTimeout(poll, 5000);
   }
 }
 function showLogin() {

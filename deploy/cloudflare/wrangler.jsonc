@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "no-comment-booking",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "ORIGIN_URL": "https://frostbyte.158-179-207-206.sslip.io"
+  }
+}
