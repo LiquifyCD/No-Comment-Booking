@@ -38,6 +38,36 @@ class SettingsTests(unittest.TestCase):
         )
         self.assertTrue(settings.is_server)
         self.assertEqual({"user": "hash"}, settings.server_users)
+        self.assertTrue(settings.has_remote_browser)
+
+    def test_server_mode_can_disable_remote_browser_fallback(self):
+        settings = load_settings(
+            {
+                "APP_MODE": "server",
+                "ENABLE_SERVER_MODE": "true",
+                "APP_SECRET_KEY": "x" * 48,
+                "PUBLIC_ORIGIN": "https://service.example",
+                "ALLOWED_HOSTS": "service.example",
+                "SERVER_USERS_JSON": '{"user":"hash"}',
+                "DATA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            }
+        )
+        self.assertFalse(settings.has_remote_browser)
+
+    def test_remote_browser_settings_must_be_paired(self):
+        with self.assertRaisesRegex(SettingsError, "configured together"):
+            load_settings(
+                {
+                    "APP_MODE": "server",
+                    "ENABLE_SERVER_MODE": "true",
+                    "APP_SECRET_KEY": "x" * 48,
+                    "PUBLIC_ORIGIN": "https://service.example",
+                    "ALLOWED_HOSTS": "service.example",
+                    "SERVER_USERS_JSON": '{"user":"hash"}',
+                    "DATA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+                    "REMOTE_WEBDRIVER_URL": "http://browser:4444/wd/hub",
+                }
+            )
 
 
 class AuthTests(unittest.TestCase):

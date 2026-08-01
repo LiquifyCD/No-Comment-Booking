@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -151,6 +152,30 @@ class ServerWebTests(unittest.TestCase):
         self.assertIn("Secure", cookie)
         self.assertIn("SameSite=strict", cookie)
 
+    def test_disabled_browser_fallback_is_hidden_and_rejected(self):
+        settings = replace(
+            self.settings,
+            database_path=Path(self.temp.name) / "service-no-browser.db",
+            remote_webdriver_url="",
+            remote_browser_view_url="",
+        )
+        app = create_app(settings)
+        with TestClient(app, base_url="https://service.example") as client:
+            self.assertEqual(
+                204,
+                client.post(
+                    "/api/auth/login",
+                    json={"username": "alice", "password": "alice-password"},
+                ).status_code,
+            )
+            bootstrap = client.get("/api/bootstrap").json()
+            self.assertFalse(bootstrap["browserFallbackAvailable"])
+            response = client.post(
+                "/api/bankid/browser-fallback",
+                json={},
+                headers={"X-CSRF-Token": bootstrap["csrfToken"]},
+            )
+            self.assertEqual(503, response.status_code)
     def test_users_have_isolated_jobs_and_events(self):
         self.login()
         alice = self.client.get("/api/bootstrap").json()

@@ -1,0 +1,35 @@
+[Unit]
+Description=No-Comment-Booking production service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nocomment
+Group=nocomment
+WorkingDirectory=/var/lib/no-comment-booking
+EnvironmentFile=/etc/no-comment-booking.env
+ExecStart=/opt/no-comment-booking/venv/bin/no-comment-booking
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGINT
+UMask=0077
+MemoryHigh=256M
+MemoryMax=320M
+CPUQuota=80%
+TasksMax=128
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/no-comment-booking
+
+[Install]
+WantedBy=multi-user.target

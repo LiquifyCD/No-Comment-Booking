@@ -15,8 +15,8 @@ The application uses signed HttpOnly/SameSite cookies, CSRF validation on mutati
 ## Server deployment requirements
 
 - Terminate TLS at a trusted reverse proxy and expose only the application port privately.
-- Restrict Remote WebDriver to the application network; never publish it directly.
-- Protect viewer/noVNC with the same user identity or a short-lived signed URL.
+- If browser fallback is enabled, restrict Remote WebDriver to the application network; never publish it directly.
+- If browser fallback is enabled, protect viewer/noVNC with the same user identity or a short-lived signed URL.
 - Use a separate browser container/profile per user and destroy it after use.
 - Keep encryption keys separate from database backups and limit log retention and container resources.
 

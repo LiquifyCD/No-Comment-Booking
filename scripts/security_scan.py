@@ -5,7 +5,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-IGNORED_PARTS = {".git", ".venv", "build", "dist", "__pycache__", ".pytest_cache"}
+IGNORED_PARTS = {
+    ".git",
+    ".tools",
+    ".venv",
+    "build",
+    "dist",
+    "__pycache__",
+    ".pytest_cache",
+}
 PATTERNS = {
     "Discord webhook": re.compile(r"https://discord\.com/api/webhooks/\d+/[A-Za-z0-9_-]+"),
     "Trafikverket cookie": re.compile(

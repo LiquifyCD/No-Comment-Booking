@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily No-Comment-Booking backup
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

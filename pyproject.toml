@@ -27,6 +27,9 @@ no-comment-booking = "provtidsbevakaren.launcher:main"
 [tool.setuptools.package-data]
 provtidsbevakaren = ["static/*.html", "static/*.css", "static/*.js"]
 
+[tool.setuptools.packages.find]
+include = ["provtidsbevakaren*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

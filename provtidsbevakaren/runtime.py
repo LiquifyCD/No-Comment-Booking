@@ -122,7 +122,7 @@ class MonitorJob:
             self._thread.start()
 
     def _driver_factory(self) -> Callable[[str], Any] | None:
-        if not self.settings.is_server:
+        if not self.settings.is_server or not self.settings.has_remote_browser:
             return None
 
         def create_remote_driver(_profile: str) -> Any:

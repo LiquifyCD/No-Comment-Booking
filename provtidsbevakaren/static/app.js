@@ -9,6 +9,7 @@ const state = {
   catalog: { licences: [], examinationTypes: [], locations: [] },
   qrVersion: 0,
   authenticated: false,
+  browserFallbackAvailable: true,
   savedConfig: null,
   catalogAttempted: false,
   nearbySelection: new Set(),
@@ -280,7 +281,8 @@ function updateBankId(bankId) {
     $("#bankidStatus").textContent = messages[bankId.state];
     $("#bankidQr").hidden = bankId.state !== "pending";
     $("#bankidOpen").hidden = !bankId.canOpenOnDevice;
-    $("#bankidFallback").hidden = bankId.state !== "error";
+    $("#bankidFallback").hidden =
+      bankId.state !== "error" || !state.browserFallbackAvailable;
     $("#bankidRetry").hidden = bankId.state !== "error";
     if (bankId.qrVersion && bankId.qrVersion !== state.qrVersion) {
       state.qrVersion = bankId.qrVersion;
@@ -411,6 +413,7 @@ async function bootstrap() {
   try {
     const data = await api("/api/bootstrap");
     state.csrf = data.csrfToken;
+    state.browserFallbackAvailable = data.browserFallbackAvailable;
     $("#modeBadge").textContent = data.mode.toUpperCase();
     $("#metricMode").dataset.mode = data.mode;
     $("#logoutButton").hidden = data.mode !== "server";

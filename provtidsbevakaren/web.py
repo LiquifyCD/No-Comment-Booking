@@ -175,6 +175,8 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
             "version": __version__,
             "user": session.user_id,
             "csrfToken": session.csrf_token,
+            "browserFallbackAvailable": not settings.is_server
+            or settings.has_remote_browser,
             "config": store.load_config(session.user_id),
             **job.snapshot(),
         }
@@ -208,6 +210,11 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
 
     @app.post("/api/bankid/browser-fallback")
     async def browser_fallback(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+        if settings.is_server and not settings.has_remote_browser:
+            raise HTTPException(
+                status_code=503,
+                detail="Browser fallback is not available on this server",
+            )
         registry.for_user(session.user_id).use_browser_fallback()
         return {"status": "starting"}
 

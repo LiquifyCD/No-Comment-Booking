@@ -4,3 +4,7 @@
 *.css text eol=lf
 *.html text eol=lf
 *.ps1 text eol=crlf
+*.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+Caddyfile* text eol=lf

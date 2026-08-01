@@ -38,7 +38,7 @@ The same in-memory `requests.Session` is reused for monitoring and reservation. 
 
 Local mode exchanges a random launch token for a signed HttpOnly cookie, binds Uvicorn to `127.0.0.1`, and uses volatile storage. Shutdown clears the session, catalog, pending challenge, configuration, and cookies.
 
-Server mode uses password login, Secure/HttpOnly/SameSite cookies, CSRF protection, encrypted SQLite configuration, and an isolated runtime per user. It refuses to start without explicit activation, HTTPS origin, allowed hosts, credentials, separate cryptographic keys, Remote WebDriver, and a viewer URL.
+Server mode uses password login, Secure/HttpOnly/SameSite cookies, CSRF protection, encrypted SQLite configuration, and an isolated runtime per user. It refuses to start without explicit activation, HTTPS origin, allowed hosts, credentials, and separate cryptographic keys. Browser fallback is exposed only when both a Remote WebDriver and a protected viewer URL are configured.
 
 ## State and concurrency
 

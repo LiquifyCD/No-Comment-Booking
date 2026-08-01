@@ -2,7 +2,7 @@ import tempfile
 import threading
 import time
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -242,10 +242,8 @@ class DateAndReservationTests(unittest.TestCase):
             }
         )
         self.assertEqual(datetime.now(UTC).date().isoformat(), config.date_from)
-        self.assertEqual(
-            "2026-07-16",
-            engine.effective_date_from(config, datetime(2026, 7, 16, 0, 1, tzinfo=UTC)),
-        )
+        later = datetime.now(UTC) + timedelta(days=1)
+        self.assertEqual(later.date().isoformat(), engine.effective_date_from(config, later))
 
     def test_pending_booking_is_sanitized_and_can_complete_in_app(self):
         with tempfile.TemporaryDirectory() as directory:

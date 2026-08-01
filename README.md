@@ -61,7 +61,7 @@ The executable is written to `dist\No-Comment-Booking.exe`.
 Server mode fails closed if any mandatory protection is missing.
 
 1. Configure an HTTPS reverse proxy.
-2. Configure an isolated Selenium-compatible Remote WebDriver and authenticated viewer/noVNC URL per user for browser fallback.
+2. Optional: configure an isolated Selenium-compatible Remote WebDriver and authenticated viewer/noVNC URL per user for browser fallback. Leave both variables empty to disable and hide the fallback.
 3. Generate secrets:
 
 ```powershell
@@ -70,7 +70,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 python -m provtidsbevakaren.launcher --hash-password
 ```
 
-4. Copy `.env.server.example` to a private environment file and set `APP_SECRET_KEY`, `DATA_ENCRYPTION_KEY`, `SERVER_USERS_JSON`, `PUBLIC_ORIGIN`, `ALLOWED_HOSTS`, `REMOTE_WEBDRIVER_URL`, and `REMOTE_BROWSER_VIEW_URL`.
+4. Copy `.env.server.example` to a private environment file and set `APP_SECRET_KEY`, `DATA_ENCRYPTION_KEY`, `SERVER_USERS_JSON`, `PUBLIC_ORIGIN`, and `ALLOWED_HOSTS`. Set both remote-browser variables only when protected browser infrastructure exists.
 5. Set `APP_MODE=server` and `ENABLE_SERVER_MODE=true`.
 6. Start the container behind HTTPS and verify `/api/health`.
 

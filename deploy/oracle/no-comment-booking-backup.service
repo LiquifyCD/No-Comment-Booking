@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up No-Comment-Booking SQLite data
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/no-comment-booking-backup
+Nice=10
+IOSchedulingClass=idle

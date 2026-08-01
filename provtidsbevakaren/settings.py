@@ -31,6 +31,10 @@ class AppSettings:
     def is_server(self) -> bool:
         return self.mode == "server"
 
+    @property
+    def has_remote_browser(self) -> bool:
+        return bool(self.remote_webdriver_url and self.remote_browser_view_url)
+
 
 def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
     env = os.environ if environ is None else environ
@@ -56,8 +60,6 @@ def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
         "PUBLIC_ORIGIN",
         "SERVER_USERS_JSON",
         "DATA_ENCRYPTION_KEY",
-        "REMOTE_WEBDRIVER_URL",
-        "REMOTE_BROWSER_VIEW_URL",
     )
     missing = [name for name in required if not env.get(name)]
     if missing:
@@ -66,7 +68,13 @@ def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
         raise SettingsError("APP_SECRET_KEY must contain at least 32 characters")
     if not env["PUBLIC_ORIGIN"].startswith("https://"):
         raise SettingsError("PUBLIC_ORIGIN must use HTTPS in server mode")
-    if "{session_id}" not in env["REMOTE_BROWSER_VIEW_URL"]:
+    remote_webdriver_url = env.get("REMOTE_WEBDRIVER_URL", "").strip()
+    remote_browser_view_url = env.get("REMOTE_BROWSER_VIEW_URL", "").strip()
+    if bool(remote_webdriver_url) != bool(remote_browser_view_url):
+        raise SettingsError(
+            "REMOTE_WEBDRIVER_URL and REMOTE_BROWSER_VIEW_URL must be configured together"
+        )
+    if remote_browser_view_url and "{session_id}" not in remote_browser_view_url:
         raise SettingsError("REMOTE_BROWSER_VIEW_URL must contain {session_id}")
     try:
         users = json.loads(env["SERVER_USERS_JSON"])
@@ -90,6 +98,6 @@ def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
         server_users={str(key): str(value) for key, value in users.items()},
         data_encryption_key=env["DATA_ENCRYPTION_KEY"],
         database_path=Path(env.get("DATABASE_PATH", "data/service.db")),
-        remote_webdriver_url=env["REMOTE_WEBDRIVER_URL"],
-        remote_browser_view_url=env["REMOTE_BROWSER_VIEW_URL"],
+        remote_webdriver_url=remote_webdriver_url,
+        remote_browser_view_url=remote_browser_view_url,
     )
