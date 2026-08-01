@@ -1,5 +1,6 @@
 #!/opt/no-comment-booking/venv/bin/python
 import argparse
+import time
 from pathlib import Path
 
 import requests
@@ -13,6 +14,7 @@ def main() -> None:
         "--credentials", default="/root/frostbyte-app-login.txt"
     )
     parser.add_argument("--insecure", action="store_true")
+    parser.add_argument("--exercise-monitor", action="store_true")
     args = parser.parse_args()
 
     credentials = dict(
@@ -57,10 +59,54 @@ def main() -> None:
         f"{args.base_url}/api/bootstrap", timeout=15, verify=verify
     )
     bootstrap.raise_for_status()
-    assert bootstrap.json()["browserFallbackAvailable"] is False
+    bootstrap_data = bootstrap.json()
+    assert bootstrap_data["browserFallbackAvailable"] is False
     print("Public health, authentication, secure cookie, and bootstrap: OK")
+
+    if args.exercise_monitor:
+        config = bootstrap_data.get("config")
+        assert config, "No saved monitor configuration is available"
+        csrf_headers = {"X-CSRF-Token": bootstrap_data["csrfToken"]}
+
+        initial_stop = session.post(
+            f"{args.base_url}/api/monitor/stop",
+            json={},
+            headers=csrf_headers,
+            timeout=30,
+            verify=verify,
+        )
+        initial_stop.raise_for_status()
+
+        started = session.post(
+            f"{args.base_url}/api/monitor/start",
+            json=config,
+            headers=csrf_headers,
+            timeout=30,
+            verify=verify,
+        )
+        started.raise_for_status()
+        assert started.json()["status"] == "starting"
+
+        try:
+            time.sleep(2)
+            polled = session.get(
+                f"{args.base_url}/api/events?after=0", timeout=15, verify=verify
+            )
+            polled.raise_for_status()
+            assert "state" in polled.json()
+        finally:
+            stopped = session.post(
+                f"{args.base_url}/api/monitor/stop",
+                json={},
+                headers=csrf_headers,
+                timeout=30,
+                verify=verify,
+            )
+            stopped.raise_for_status()
+            assert stopped.json()["status"] == "stopped"
+
+        print("Monitor start, status polling, and stop: OK")
 
 
 if __name__ == "__main__":
     main()
-
