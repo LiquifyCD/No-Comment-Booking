@@ -7,7 +7,9 @@ frontend and API URL at:
 
 Frostbyte uses `https://frostbyte.158-179-207-206.sslip.io` only as the
 publicly trusted HTTPS origin. API and authentication responses retain
-`Cache-Control: no-store` through the Worker.
+`Cache-Control: no-store` through the Worker. Caddy allows application traffic
+only from Cloudflare's published IPv4 and IPv6 ranges, so direct origin access
+returns HTTP 403.
 
 ## Deploy the Worker
 
