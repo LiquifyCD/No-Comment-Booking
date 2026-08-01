@@ -141,6 +141,18 @@ class ClientTests(unittest.TestCase):
         with self.assertRaises(bot.AuthenticationRequiredError):
             self.client.post("start")
 
+    def test_http_error_includes_safe_api_detail(self):
+        payload = {"data": {"message": "Ogiltig bokningssession"}}
+        self.client.session.post.return_value = self.response(status=400, payload=payload)
+        with self.assertRaisesRegex(bot.ApiResponseError, "Ogiltig bokningssession"):
+            self.client.post("booking-hindrances")
+
+    def test_http_error_redacts_personnummer(self):
+        payload = {"message": "Ogiltigt personnummer 20000101-1234"}
+        self.client.session.post.return_value = self.response(status=400, payload=payload)
+        with self.assertRaisesRegex(bot.ApiResponseError, r"\[personnummer dolt\]"):
+            self.client.post("booking-hindrances")
+
     def test_api_login_required_envelope_is_clear_error(self):
         payload = {
             "status": 400,

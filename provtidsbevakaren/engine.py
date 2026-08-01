@@ -57,6 +57,40 @@ class ReservationStateError(ApiResponseError):
     pass
 
 
+def _safe_http_error_detail(response: requests.Response) -> str | None:
+    """Extract a short API error without exposing request data or identifiers."""
+    try:
+        payload = response.json()
+    except (requests.JSONDecodeError, ValueError):
+        return None
+
+    candidates: list[str] = []
+
+    def collect(value: Any, depth: int = 0) -> None:
+        if depth > 2:
+            return
+        if isinstance(value, dict):
+            for key in ("message", "title", "detail", "error", "errorMessage"):
+                item = value.get(key)
+                if isinstance(item, str):
+                    candidates.append(item)
+                elif key == "detail" and isinstance(item, list):
+                    collect(item, depth + 1)
+            data = value.get("data")
+            if isinstance(data, dict):
+                collect(data, depth + 1)
+        elif isinstance(value, list):
+            for item in value[:3]:
+                collect(item, depth + 1)
+
+    collect(payload)
+    if not candidates:
+        return None
+    detail = re.sub(r"\s+", " ", candidates[0]).strip()
+    detail = re.sub(r"(?<!\d)\d{8}-?\d{4}(?!\d)", "[personnummer dolt]", detail)
+    return detail[:300] or None
+
+
 @dataclass(frozen=True)
 class Config:
     name: str
@@ -216,7 +250,11 @@ class TrafikverketClient:
         try:
             response.raise_for_status()
         except requests.HTTPError as exc:
-            raise ApiResponseError(f"{path} svarade med HTTP {response.status_code}") from exc
+            message = f"{path} svarade med HTTP {response.status_code}"
+            detail = _safe_http_error_detail(response)
+            if detail:
+                message = f"{message}: {detail}"
+            raise ApiResponseError(message) from exc
 
         content_type = response.headers.get("Content-Type", "").lower()
         if "json" not in content_type:
