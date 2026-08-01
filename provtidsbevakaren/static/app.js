@@ -7,6 +7,9 @@ const state = {
   pollTimer: null,
   polling: false,
   runtime: "idle",
+  eventSource: null,
+  reconnectTimer: null,
+  streamRecovering: false,
   catalog: { licences: [], examinationTypes: [], locations: [] },
   qrVersion: 0,
   authenticated: false,
@@ -414,8 +417,68 @@ function pollNow() {
   clearTimeout(state.pollTimer);
   poll();
 }
+function applySnapshot(data) {
+  setRuntime(data.state);
+  updateBankId(data.bankId);
+  for (const event of data.events) {
+    state.lastEvent = Math.max(state.lastEvent, event.id);
+    addEvent(event);
+  }
+}
+function stopEventStream() {
+  clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
+  if (state.eventSource) state.eventSource.close();
+  state.eventSource = null;
+}
+function scheduleEventStream(delay = 2000) {
+  clearTimeout(state.reconnectTimer);
+  if (!navigator.onLine) return;
+  state.reconnectTimer = setTimeout(connectEventStream, delay);
+}
+async function recoverEventStream() {
+  if (state.streamRecovering) return;
+  state.streamRecovering = true;
+  try {
+    applySnapshot(await api(`/api/events?after=${state.lastEvent}`));
+    scheduleEventStream();
+  } catch (error) {
+    if (error.status === 401) showLogin();
+    else scheduleEventStream(5000);
+  } finally {
+    state.streamRecovering = false;
+  }
+}
+function connectEventStream() {
+  if (!state.csrf) return;
+  if (!("EventSource" in window)) {
+    pollNow();
+    return;
+  }
+  stopEventStream();
+  const source = new EventSource(`/api/events/stream?after=${state.lastEvent}`);
+  state.eventSource = source;
+  source.onmessage = (event) => {
+    try {
+      applySnapshot(JSON.parse(event.data));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+  source.addEventListener("auth", () => {
+    stopEventStream();
+    showLogin();
+  });
+  source.onerror = () => {
+    source.close();
+    if (state.eventSource === source) state.eventSource = null;
+    recoverEventStream();
+  };
+}
 function showLogin() {
   clearTimeout(state.pollTimer);
+  stopEventStream();
+  state.csrf = "";
   $("#appView").hidden = true;
   $("#loginView").hidden = false;
   $("#loginForm").hidden = false;
@@ -460,7 +523,7 @@ async function bootstrap() {
     }
     showApp();
     if (data.isAdmin) await loadUsers();
-    poll();
+    connectEventStream();
   } catch (error) {
     if (error.status === 401) {
       if (health.mode === "server") showLogin();
@@ -755,10 +818,9 @@ document.querySelectorAll(".nav-link").forEach((link) =>
 form.addEventListener("input", updateMetrics);
 enforceDateMinimum();
 setInterval(enforceDateMinimum, 30_000);
-window.addEventListener("online", pollNow);
-window.addEventListener("focus", pollNow);
+window.addEventListener("online", connectEventStream);
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") pollNow();
+  if (document.visibilityState === "visible" && !state.eventSource) connectEventStream();
 });
 bootstrap().catch((error) => {
   console.error(error);

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import secrets
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -281,6 +283,59 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         after: int = 0, session: UserSession = Depends(current_session)
     ) -> dict[str, Any]:
         return registry.for_user(session.user_id).snapshot(max(0, after))
+
+    @app.get("/api/events/stream")
+    async def event_stream(
+        request: Request,
+        after: int = 0,
+        session: UserSession = Depends(current_session),
+    ) -> StreamingResponse:
+        job = registry.for_user(session.user_id)
+        header_cursor = request.headers.get("Last-Event-ID", "")
+        cursor = max(0, after, int(header_cursor) if header_cursor.isdigit() else 0)
+
+        async def snapshots():
+            nonlocal cursor
+            previous_state = ""
+            last_send = time.monotonic()
+            while not await request.is_disconnected():
+                account = auth.account(session.user_id) if settings.is_server else None
+                if session.expires_at < time.time() or (
+                    settings.is_server and (not account or not account.is_active)
+                ):
+                    yield "event: auth\ndata: {\"status\":401}\n\n"
+                    return
+
+                snapshot = job.snapshot(cursor)
+                events = snapshot["events"]
+                if events:
+                    cursor = max(cursor, *(int(event["id"]) for event in events))
+                state_signature = json.dumps(
+                    {**snapshot, "events": []},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                if events or state_signature != previous_state:
+                    payload = json.dumps(
+                        snapshot, ensure_ascii=False, separators=(",", ":")
+                    )
+                    yield f"id: {cursor}\ndata: {payload}\n\n"
+                    previous_state = state_signature
+                    last_send = time.monotonic()
+                elif time.monotonic() - last_send >= 15:
+                    yield ": keepalive\n\n"
+                    last_send = time.monotonic()
+                await asyncio.sleep(1 if snapshot["state"] == "authentication" else 2)
+
+        return StreamingResponse(
+            snapshots(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.post("/api/bankid/start")
     async def start_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
