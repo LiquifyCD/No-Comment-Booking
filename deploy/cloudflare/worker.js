@@ -3,6 +3,11 @@ const DEFAULT_ORIGIN = "https://frostbyte.158-179-207-206.sslip.io";
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
+    if (incoming.protocol !== "https:") {
+      incoming.protocol = "https:";
+      return Response.redirect(incoming, 308);
+    }
+
     const origin = new URL(env.ORIGIN_URL || DEFAULT_ORIGIN);
     origin.pathname = incoming.pathname;
     origin.search = incoming.search;
