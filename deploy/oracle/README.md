@@ -6,7 +6,9 @@ The optional Selenium browser fallback is disabled because a secure isolated bro
 
 ## Install
 
-After the OCI instance and its Frostbyte-only NSG allow TCP 22, 80, and 443:
+Create a dedicated `Frostbyte-vcn` with `Frostbyte-public-subnet`; do not attach
+the instance to another application's VCN. Allow inbound TCP 22, 80, and 443
+in Frostbyte's security list, then run:
 
 ```bash
 sudo PUBLIC_HOST=<public-ip-or-domain> APP_USERNAME=liquify \

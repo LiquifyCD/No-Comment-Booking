@@ -27,6 +27,23 @@ apt-get clean
 
 dpkg-reconfigure -f noninteractive unattended-upgrades
 
+install -m 0644 "$SOURCE_DIR/deploy/oracle/99-frostbyte-hardening.conf" \
+  /etc/ssh/sshd_config.d/99-frostbyte-hardening.conf
+sshd -t
+systemctl reload ssh
+
+for unit in \
+  apport.service \
+  ModemManager.service \
+  open-vm-tools.service \
+  vgauth.service \
+  rpcbind.service \
+  rpcbind.socket \
+  udisks2.service
+do
+  systemctl disable --now "$unit" 2>/dev/null || true
+done
+
 if ! id nocomment >/dev/null 2>&1; then
   useradd --system --home /var/lib/no-comment-booking --shell /usr/sbin/nologin nocomment
 fi
