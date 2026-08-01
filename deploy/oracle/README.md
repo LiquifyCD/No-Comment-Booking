@@ -37,9 +37,15 @@ After reboot, repeat both health checks and inspect `systemctl is-active no-comm
 ```bash
 sudo git -C /opt/no-comment-booking/source fetch --prune --depth 1 origin main
 sudo git -C /opt/no-comment-booking/source checkout --detach FETCH_HEAD
+sudo /usr/local/sbin/no-comment-booking-backup
 sudo /opt/no-comment-booking/venv/bin/python -m pip install --no-cache-dir --force-reinstall /opt/no-comment-booking/source
 sudo systemctl restart no-comment-booking
+for attempt in {1..30}; do
+  curl -fsS http://127.0.0.1:8080/api/health && break
+  sleep 1
+done
 curl -fsS http://127.0.0.1:8080/api/health
+sudo no-comment-booking-smoke-test https://<public-ip> --insecure
 ```
 
 ## Operations
