@@ -6,6 +6,7 @@ const state = {
   lastEvent: 0,
   pollTimer: null,
   polling: false,
+  runtime: "idle",
   catalog: { licences: [], examinationTypes: [], locations: [] },
   qrVersion: 0,
   authenticated: false,
@@ -217,6 +218,7 @@ function updateMetrics() {
     `${form.elements.poll_interval_seconds.value || 60} sek`;
 }
 function setRuntime(runtime) {
+  state.runtime = runtime;
   const active = [
     "starting",
     "running",
@@ -379,10 +381,16 @@ async function poll() {
   if (state.polling) return;
   state.polling = true;
   let continuePolling = true;
+  let nextDelay = 5000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const data = await api(`/api/events?after=${state.lastEvent}`);
+    const data = await api(`/api/events?after=${state.lastEvent}`, {
+      signal: controller.signal,
+    });
     setRuntime(data.state);
     updateBankId(data.bankId);
+    nextDelay = data.state === "authentication" ? 1000 : 5000;
     for (const event of data.events) {
       state.lastEvent = Math.max(state.lastEvent, event.id);
       addEvent(event);
@@ -392,11 +400,19 @@ async function poll() {
       continuePolling = false;
       clearTimeout(state.pollTimer);
       showLogin();
-    } else console.error(error);
+    } else {
+      nextDelay = 2000;
+      console.error(error);
+    }
   } finally {
+    clearTimeout(timeout);
     state.polling = false;
-    if (continuePolling) state.pollTimer = setTimeout(poll, 5000);
+    if (continuePolling) state.pollTimer = setTimeout(poll, nextDelay);
   }
+}
+function pollNow() {
+  clearTimeout(state.pollTimer);
+  poll();
 }
 function showLogin() {
   clearTimeout(state.pollTimer);
@@ -739,6 +755,11 @@ document.querySelectorAll(".nav-link").forEach((link) =>
 form.addEventListener("input", updateMetrics);
 enforceDateMinimum();
 setInterval(enforceDateMinimum, 30_000);
+window.addEventListener("online", pollNow);
+window.addEventListener("focus", pollNow);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") pollNow();
+});
 bootstrap().catch((error) => {
   console.error(error);
   showLogin();
