@@ -10,6 +10,7 @@ const state = {
   qrVersion: 0,
   authenticated: false,
   browserFallbackAvailable: true,
+  isAdmin: false,
   savedConfig: null,
   catalogAttempted: false,
   nearbySelection: new Set(),
@@ -401,6 +402,9 @@ function showLogin() {
   clearTimeout(state.pollTimer);
   $("#appView").hidden = true;
   $("#loginView").hidden = false;
+  $("#loginForm").hidden = false;
+  $("#showRegister").hidden = false;
+  $("#registerForm").hidden = true;
 }
 function showApp() {
   $("#loginView").hidden = true;
@@ -413,11 +417,14 @@ async function bootstrap() {
   try {
     const data = await api("/api/bootstrap");
     state.csrf = data.csrfToken;
+    state.isAdmin = data.isAdmin;
     state.browserFallbackAvailable = data.browserFallbackAvailable;
     $("#modeBadge").textContent = data.mode.toUpperCase();
     $("#metricMode").dataset.mode = data.mode;
     $("#logoutButton").hidden = data.mode !== "server";
     $("#exitButton").hidden = data.mode === "server";
+    $("#adminNav").hidden = !data.isAdmin;
+    $("#users").hidden = !data.isAdmin;
     $("#privacyText").textContent =
       data.mode === "local"
         ? "Cookies finns bara i minnet tills programmet stängs."
@@ -436,6 +443,7 @@ async function bootstrap() {
       addEvent(event);
     }
     showApp();
+    if (data.isAdmin) await loadUsers();
     poll();
   } catch (error) {
     if (error.status === 401) {
@@ -447,6 +455,81 @@ async function bootstrap() {
       }
     } else throw error;
   }
+}
+
+function userStatus(account) {
+  if (account.role === "admin") return "Admin";
+  if (account.status === "pending") return "Väntar";
+  if (account.status === "disabled") return "Avstängd";
+  if (account.paid) return "Betald";
+  return "Godkänd";
+}
+
+function renderUsers(accounts) {
+  const list = $("#userList");
+  list.replaceChildren();
+  for (const account of accounts) {
+    const card = document.createElement("article");
+    card.className = "user-card";
+
+    const identity = document.createElement("div");
+    const name = document.createElement("strong");
+    name.textContent = account.username;
+    const detail = document.createElement("small");
+    detail.textContent = account.role === "admin" ? "Administratör" : "Användare";
+    identity.append(name, detail);
+
+    const status = document.createElement("span");
+    status.className = `user-status ${account.status}`;
+    status.textContent = userStatus(account);
+
+    const actions = document.createElement("div");
+    actions.className = "user-actions";
+    if (account.role !== "admin") {
+      if (account.status !== "active") {
+        actions.append(
+          userActionButton("Godkänn", "approve", account.username, "secondary"),
+          userActionButton("Markera betald", "mark-paid", account.username, "primary"),
+        );
+      }
+      if (account.status === "active") {
+        actions.append(
+          userActionButton("Stäng av", "disable", account.username, "danger"),
+        );
+      }
+    }
+    card.append(identity, status, actions);
+    list.append(card);
+  }
+}
+
+function userActionButton(label, action, username, style) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `button ${style}`;
+  button.textContent = label;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await api(`/api/admin/users/${encodeURIComponent(username)}/${action}`, {
+        method: "POST",
+        body: "{}",
+      });
+      await loadUsers();
+      toast(`${username} uppdaterades`);
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return button;
+}
+
+async function loadUsers() {
+  if (!state.isAdmin) return;
+  const data = await api("/api/admin/users");
+  renderUsers(data.users);
 }
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -587,11 +670,46 @@ $("#loginForm").addEventListener("submit", async (event) => {
     $("#loginError").textContent = error.message;
   }
 });
+$("#showRegister").addEventListener("click", () => {
+  $("#loginForm").hidden = true;
+  $("#showRegister").hidden = true;
+  $("#registerForm").hidden = false;
+  $("#loginError").textContent = "";
+  $("#registerMessage").textContent = "";
+});
+$("#showLogin").addEventListener("click", showLogin);
+$("#registerForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  if (data.get("password") !== data.get("password_confirm")) {
+    $("#registerMessage").textContent = "Lösenorden matchar inte.";
+    return;
+  }
+  try {
+    await api("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        username: data.get("username"),
+        password: data.get("password"),
+      }),
+    });
+    event.currentTarget.reset();
+    showLogin();
+    $("#registerMessage").textContent =
+      "Kontot är skapat och väntar på betalning eller administratörsgodkännande.";
+  } catch (error) {
+    $("#registerMessage").textContent = error.message;
+  }
+});
 $("#logoutButton").addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST", body: "{}" });
   state.csrf = "";
+  state.isAdmin = false;
   showLogin();
 });
+$("#refreshUsers").addEventListener("click", () =>
+  loadUsers().catch((error) => toast(error.message)),
+);
 $("#exitButton").addEventListener("click", async () => {
   if (
     confirm("Close No-Comment-Booking and delete the temporary session?")

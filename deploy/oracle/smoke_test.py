@@ -1,5 +1,6 @@
 #!/opt/no-comment-booking/venv/bin/python
 import argparse
+import secrets
 import sqlite3
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ def main() -> None:
     )
     parser.add_argument("--insecure", action="store_true")
     parser.add_argument("--exercise-monitor", action="store_true")
+    parser.add_argument("--exercise-accounts", action="store_true")
     parser.add_argument(
         "--database-path", default="/var/lib/no-comment-booking/data/service.db"
     )
@@ -66,6 +68,74 @@ def main() -> None:
     bootstrap_data = bootstrap.json()
     assert bootstrap_data["browserFallbackAvailable"] is False
     print("Public health, authentication, secure cookie, and bootstrap: OK")
+
+    if args.exercise_accounts:
+        assert bootstrap_data["isAdmin"] is True
+        username = f"smoke-{secrets.token_hex(5)}"
+        password = f"Smoke-{secrets.token_urlsafe(18)}"
+        registered = False
+        try:
+            registration = requests.post(
+                f"{args.base_url}/api/auth/register",
+                json={"username": username, "password": password},
+                timeout=30,
+                verify=verify,
+            )
+            registration.raise_for_status()
+            registered = True
+            assert registration.json()["status"] == "pending"
+
+            pending = requests.post(
+                f"{args.base_url}/api/auth/login",
+                json={"username": username, "password": password},
+                timeout=30,
+                verify=verify,
+            )
+            assert pending.status_code == 403
+
+            csrf_headers = {"X-CSRF-Token": bootstrap_data["csrfToken"]}
+            approved = session.post(
+                f"{args.base_url}/api/admin/users/{username}/approve",
+                json={},
+                headers=csrf_headers,
+                timeout=30,
+                verify=verify,
+            )
+            approved.raise_for_status()
+
+            user_session = requests.Session()
+            user_login = user_session.post(
+                f"{args.base_url}/api/auth/login",
+                json={"username": username, "password": password},
+                timeout=30,
+                verify=verify,
+            )
+            user_login.raise_for_status()
+            user_bootstrap = user_session.get(
+                f"{args.base_url}/api/bootstrap", timeout=15, verify=verify
+            )
+            user_bootstrap.raise_for_status()
+            assert user_bootstrap.json()["isAdmin"] is False
+
+            disabled = session.post(
+                f"{args.base_url}/api/admin/users/{username}/disable",
+                json={},
+                headers=csrf_headers,
+                timeout=30,
+                verify=verify,
+            )
+            disabled.raise_for_status()
+            assert (
+                user_session.get(
+                    f"{args.base_url}/api/bootstrap", timeout=15, verify=verify
+                ).status_code
+                == 401
+            )
+        finally:
+            if registered:
+                with sqlite3.connect(args.database_path) as database:
+                    database.execute("DELETE FROM accounts WHERE username=?", (username,))
+        print("Registration, pending gate, admin approval, and disable: OK")
 
     if args.exercise_monitor:
         config = bootstrap_data.get("config")

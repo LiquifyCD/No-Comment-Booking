@@ -22,6 +22,7 @@ class AppSettings:
     public_origin: str = "http://127.0.0.1:8765"
     allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost")
     server_users: dict[str, str] = field(default_factory=dict)
+    admin_users: tuple[str, ...] = ()
     data_encryption_key: str = ""
     database_path: Path = Path("data/service.db")
     remote_webdriver_url: str = ""
@@ -82,6 +83,14 @@ def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
         raise SettingsError("SERVER_USERS_JSON is not valid JSON") from exc
     if not isinstance(users, dict) or not users:
         raise SettingsError("SERVER_USERS_JSON must be a non-empty username-to-hash object")
+    admin_users = tuple(
+        item.strip().lower() for item in env.get("ADMIN_USERS", "").split(",") if item.strip()
+    )
+    if not admin_users:
+        admin_users = (str(next(iter(users))).strip().lower(),)
+    unknown_admins = [name for name in admin_users if name not in {str(key).lower() for key in users}]
+    if unknown_admins:
+        raise SettingsError("ADMIN_USERS must reference usernames in SERVER_USERS_JSON")
     allowed_hosts = tuple(
         item.strip() for item in env.get("ALLOWED_HOSTS", "").split(",") if item.strip()
     )
@@ -96,6 +105,7 @@ def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
         public_origin=env["PUBLIC_ORIGIN"].rstrip("/"),
         allowed_hosts=allowed_hosts,
         server_users={str(key): str(value) for key, value in users.items()},
+        admin_users=admin_users,
         data_encryption_key=env["DATA_ENCRYPTION_KEY"],
         database_path=Path(env.get("DATABASE_PATH", "data/service.db")),
         remote_webdriver_url=remote_webdriver_url,

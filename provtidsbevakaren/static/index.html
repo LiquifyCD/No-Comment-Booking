@@ -36,7 +36,42 @@
           /></label>
           <button class="button primary full" type="submit">Logga in</button>
         </form>
+        <button id="showRegister" class="button ghost full" type="button">
+          Skapa konto
+        </button>
         <p id="loginError" class="form-error" role="alert"></p>
+        <form id="registerForm" class="stack" hidden>
+          <label
+            >Användarnamn<input
+              name="username"
+              autocomplete="username"
+              minlength="3"
+              maxlength="32"
+              pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}"
+              required
+          /></label>
+          <label
+            >Lösenord<input
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              required
+          /></label>
+          <label
+            >Upprepa lösenord<input
+              name="password_confirm"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              required
+          /></label>
+          <button class="button primary full" type="submit">Registrera</button>
+          <button id="showLogin" class="button ghost full" type="button">
+            Tillbaka till inloggning
+          </button>
+        </form>
+        <p id="registerMessage" class="form-message" role="status"></p>
       </section>
     </main>
 
@@ -58,6 +93,9 @@
           >
           <a class="nav-link" href="#activity" data-section="activity"
             ><span>03</span> Aktivitet</a
+          >
+          <a id="adminNav" class="nav-link" href="#users" data-section="users" hidden
+            ><span>04</span> Användare</a
           >
         </nav>
         <div class="privacy-note">
@@ -430,6 +468,23 @@
             </div>
           </footer>
         </form>
+
+        <section id="users" class="page-section" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Administration</p>
+              <h2>Användarkonton</h2>
+            </div>
+            <button id="refreshUsers" class="button ghost" type="button">
+              Uppdatera
+            </button>
+          </div>
+          <p class="muted">
+            Nya konton saknar åtkomst tills betalning har verifierats eller en
+            administratör godkänner dem.
+          </p>
+          <div id="userList" class="user-list"></div>
+        </section>
       </main>
     </div>
 

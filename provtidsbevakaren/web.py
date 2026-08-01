@@ -13,7 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import __version__, engine
-from .auth import AuthManager, UserSession
+from .accounts import (
+    AccountChangeRejected,
+    PendingAccountLimit,
+    SqliteAccountStore,
+    UsernameUnavailable,
+)
+from .auth import AccountAccessDenied, AuthManager, RegistrationRateLimited, UserSession
 from .runtime import RuntimeConflict, RuntimeRegistry
 from .settings import AppSettings
 from .storage import EncryptedSqliteStateStore, VolatileStateStore
@@ -25,6 +31,11 @@ STATIC_DIR = Path(__file__).with_name("static")
 class LoginPayload(BaseModel):
     username: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=256)
+
+
+class RegisterPayload(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=12, max_length=256)
 
 
 class MonitorConfigPayload(BaseModel):
@@ -61,7 +72,10 @@ class CatalogPayload(BaseModel):
 
 
 def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> FastAPI:
-    auth = AuthManager(settings)
+    accounts = SqliteAccountStore(settings.database_path) if settings.is_server else None
+    if accounts:
+        accounts.seed(settings.server_users, settings.admin_users)
+    auth = AuthManager(settings, accounts)
     store = (
         EncryptedSqliteStateStore(settings.database_path, settings.data_encryption_key)
         if settings.is_server
@@ -75,6 +89,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
             yield
         finally:
             registry.shutdown()
+            auth.close()
 
     app = FastAPI(
         title="No-Comment-Booking",
@@ -130,6 +145,23 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
             raise HTTPException(status_code=403, detail="Invalid CSRF token")
         return session
 
+    def require_admin(session: UserSession) -> UserSession:
+        account = auth.account(session.user_id)
+        if not account or not account.is_admin:
+            raise HTTPException(status_code=403, detail="Administrator access required")
+        return session
+
+    def current_admin(session: UserSession = Depends(current_session)) -> UserSession:
+        return require_admin(session)
+
+    def csrf_admin(session: UserSession = Depends(csrf_session)) -> UserSession:
+        return require_admin(session)
+
+    def remote_identity(request: Request) -> str:
+        return request.headers.get("CF-Connecting-IP") or (
+            request.client.host if request.client else "unknown"
+        )
+
     @app.get("/", include_in_schema=False)
     async def index(request: Request, token: str = "") -> Response:
         if token and not settings.is_server:
@@ -149,15 +181,41 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
     async def login(payload: LoginPayload, request: Request) -> Response:
         if not settings.is_server:
             raise HTTPException(status_code=404, detail="Not available in local mode")
-        remote = request.client.host if request.client else "unknown"
-        session = await asyncio.to_thread(
-            auth.authenticate, payload.username, payload.password, remote
-        )
+        remote = remote_identity(request)
+        try:
+            session = await asyncio.to_thread(
+                auth.authenticate, payload.username, payload.password, remote
+            )
+        except AccountAccessDenied as exc:
+            detail = (
+                "Kontot väntar på betalning eller administratörsgodkännande."
+                if exc.status == "pending"
+                else "Kontot är avstängt."
+            )
+            raise HTTPException(status_code=403, detail=detail) from exc
         if not session:
             raise HTTPException(status_code=401, detail="Invalid credentials or too many attempts")
         response = Response(status_code=204)
         set_session_cookie(response, session)
         return response
+
+    @app.post("/api/auth/register", status_code=201)
+    async def register(payload: RegisterPayload, request: Request) -> dict[str, str]:
+        if not settings.is_server:
+            raise HTTPException(status_code=404, detail="Not available in local mode")
+        try:
+            account = await asyncio.to_thread(
+                auth.register, payload.username, payload.password, remote_identity(request)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except UsernameUnavailable as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PendingAccountLimit as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RegistrationRateLimited as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
+        return {"username": account.username, "status": account.status}
 
     @app.post("/api/auth/logout")
     async def logout(session: UserSession = Depends(csrf_session)) -> Response:
@@ -170,16 +228,53 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
     @app.get("/api/bootstrap")
     async def bootstrap(session: UserSession = Depends(current_session)) -> dict[str, Any]:
         job = registry.for_user(session.user_id)
+        account = auth.account(session.user_id)
         return {
             "mode": settings.mode,
             "version": __version__,
             "user": session.user_id,
+            "isAdmin": bool(account and account.is_admin),
             "csrfToken": session.csrf_token,
             "browserFallbackAvailable": not settings.is_server
             or settings.has_remote_browser,
             "config": store.load_config(session.user_id),
             **job.snapshot(),
         }
+
+    @app.get("/api/admin/users")
+    async def admin_users(_session: UserSession = Depends(current_admin)) -> dict[str, Any]:
+        return {"users": [account.public_dict() for account in auth.list_accounts()]}
+
+    @app.post("/api/admin/users/{username}/approve")
+    async def approve_user(
+        username: str, _session: UserSession = Depends(csrf_admin)
+    ) -> dict[str, Any]:
+        try:
+            account = await asyncio.to_thread(auth.approve, username, paid=False)
+        except (ValueError, AccountChangeRejected) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return account.public_dict()
+
+    @app.post("/api/admin/users/{username}/mark-paid")
+    async def mark_user_paid(
+        username: str, _session: UserSession = Depends(csrf_admin)
+    ) -> dict[str, Any]:
+        try:
+            account = await asyncio.to_thread(auth.approve, username, paid=True)
+        except (ValueError, AccountChangeRejected) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return account.public_dict()
+
+    @app.post("/api/admin/users/{username}/disable")
+    async def disable_user(
+        username: str, _session: UserSession = Depends(csrf_admin)
+    ) -> dict[str, Any]:
+        try:
+            account = await asyncio.to_thread(auth.disable, username)
+        except (ValueError, AccountChangeRejected) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        registry.remove_user(account.username)
+        return account.public_dict()
 
     @app.get("/api/events")
     async def events(

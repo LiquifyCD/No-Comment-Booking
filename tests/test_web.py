@@ -74,7 +74,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.1.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.2.0"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -136,6 +136,7 @@ class ServerWebTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         self.app.state.registry.shutdown()
+        self.app.state.auth.close()
         self.temp.cleanup()
 
     def login(self, username="alice", password="alice-password"):
@@ -194,3 +195,63 @@ class ServerWebTests(unittest.TestCase):
             "/api/app/exit", json={}, headers={"X-CSRF-Token": bootstrap["csrfToken"]}
         )
         self.assertEqual(404, response.status_code)
+
+    def test_registered_user_is_blocked_until_admin_approval(self):
+        registered = self.client.post(
+            "/api/auth/register",
+            json={"username": "charlie", "password": "charlie-password"},
+        )
+        self.assertEqual(201, registered.status_code)
+        self.assertEqual("pending", registered.json()["status"])
+        self.assertEqual(403, self.login("charlie", "charlie-password").status_code)
+
+        self.client.cookies.clear()
+        self.assertEqual(204, self.login().status_code)
+        bootstrap = self.client.get("/api/bootstrap").json()
+        self.assertTrue(bootstrap["isAdmin"])
+        headers = {"X-CSRF-Token": bootstrap["csrfToken"]}
+        users = self.client.get("/api/admin/users").json()["users"]
+        self.assertTrue(any(user["username"] == "charlie" for user in users))
+        approved = self.client.post(
+            "/api/admin/users/charlie/approve", json={}, headers=headers
+        )
+        self.assertEqual(200, approved.status_code)
+        self.assertEqual("active", approved.json()["status"])
+        self.assertFalse(approved.json()["paid"])
+
+        self.client.cookies.clear()
+        self.assertEqual(204, self.login("charlie", "charlie-password").status_code)
+        self.assertFalse(self.client.get("/api/bootstrap").json()["isAdmin"])
+        self.assertEqual(403, self.client.get("/api/admin/users").status_code)
+
+    def test_admin_can_mark_payment_and_disable_user_session(self):
+        self.client.post(
+            "/api/auth/register",
+            json={"username": "charlie", "password": "charlie-password"},
+        )
+        self.login()
+        admin = self.client.get("/api/bootstrap").json()
+        paid = self.client.post(
+            "/api/admin/users/charlie/mark-paid",
+            json={},
+            headers={"X-CSRF-Token": admin["csrfToken"]},
+        )
+        self.assertEqual(200, paid.status_code)
+        self.assertTrue(paid.json()["paid"])
+        self.assertEqual("payment", paid.json()["accessSource"])
+
+        self.client.cookies.clear()
+        self.login("charlie", "charlie-password")
+        user_cookie = self.client.cookies.get("ptb_session")
+        self.client.cookies.clear()
+        self.login()
+        admin = self.client.get("/api/bootstrap").json()
+        disabled = self.client.post(
+            "/api/admin/users/charlie/disable",
+            json={},
+            headers={"X-CSRF-Token": admin["csrfToken"]},
+        )
+        self.assertEqual(200, disabled.status_code)
+        self.client.cookies.clear()
+        self.client.cookies.set("ptb_session", user_cookie)
+        self.assertEqual(401, self.client.get("/api/bootstrap").status_code)

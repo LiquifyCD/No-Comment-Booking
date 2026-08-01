@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 
+from .accounts import Account, SqliteAccountStore
 from .settings import AppSettings
 
 
@@ -42,12 +43,24 @@ class UserSession:
     expires_at: int
 
 
+class AccountAccessDenied(RuntimeError):
+    def __init__(self, status: str):
+        self.status = status
+        super().__init__(status)
+
+
+class RegistrationRateLimited(RuntimeError):
+    pass
+
+
 class AuthManager:
-    def __init__(self, settings: AppSettings):
+    def __init__(self, settings: AppSettings, accounts: SqliteAccountStore | None = None):
         self.settings = settings
+        self.accounts = accounts
         self._sessions: dict[str, UserSession] = {}
         self._lock = threading.RLock()
         self._login_attempts: dict[str, list[float]] = {}
+        self._registration_attempts: dict[str, list[float]] = {}
         self._local_token_consumed = False
 
     def authenticate(self, username: str, password: str, remote: str) -> UserSession | None:
@@ -60,12 +73,48 @@ class AuthManager:
                 return None
             attempts.append(now)
             self._login_attempts[remote] = attempts
-        encoded = self.settings.server_users.get(username)
-        if not encoded or not verify_password(password, encoded):
+        account = self.accounts.get(username) if self.accounts else None
+        if not account or not verify_password(password, account.password_hash):
             return None
+        if not account.is_active:
+            raise AccountAccessDenied(account.status)
         with self._lock:
             self._login_attempts.pop(remote, None)
-        return self.create_session(username)
+        return self.create_session(account.username)
+
+    def register(self, username: str, password: str, remote: str) -> Account:
+        if not self.accounts:
+            raise RuntimeError("Registration is only available in server mode")
+        now = time.time()
+        with self._lock:
+            attempts = [
+                stamp
+                for stamp in self._registration_attempts.get(remote, [])
+                if now - stamp < 3600
+            ]
+            if len(attempts) >= 5:
+                raise RegistrationRateLimited("För många registreringsförsök. Försök senare.")
+            attempts.append(now)
+            self._registration_attempts[remote] = attempts
+        return self.accounts.register(username, hash_password(password))
+
+    def account(self, username: str) -> Account | None:
+        return self.accounts.get(username) if self.accounts else None
+
+    def list_accounts(self) -> list[Account]:
+        return self.accounts.list_accounts() if self.accounts else []
+
+    def approve(self, username: str, *, paid: bool = False) -> Account:
+        if not self.accounts:
+            raise RuntimeError("Accounts are only available in server mode")
+        return self.accounts.approve(username, paid=paid)
+
+    def disable(self, username: str) -> Account:
+        if not self.accounts:
+            raise RuntimeError("Accounts are only available in server mode")
+        account = self.accounts.disable(username)
+        self.revoke_user(account.username)
+        return account
 
     def authenticate_local_token(self, token: str) -> UserSession | None:
         with self._lock:
@@ -113,10 +162,27 @@ class AuthManager:
             return None
         with self._lock:
             session = self._sessions.get(str(payload.get("sid", "")))
-            if session and session.expires_at >= time.time():
-                return session
+        if session and session.expires_at >= time.time():
+            if self.settings.is_server:
+                account = self.account(session.user_id)
+                if not account or not account.is_active:
+                    self.revoke(session)
+                    return None
+            return session
         return None
 
     def revoke(self, session: UserSession) -> None:
         with self._lock:
             self._sessions.pop(session.session_id, None)
+
+    def revoke_user(self, username: str) -> None:
+        with self._lock:
+            self._sessions = {
+                session_id: session
+                for session_id, session in self._sessions.items()
+                if session.user_id != username
+            }
+
+    def close(self) -> None:
+        if self.accounts:
+            self.accounts.close()

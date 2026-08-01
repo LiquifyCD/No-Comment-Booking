@@ -629,6 +629,54 @@ select option {
   min-height: 20px;
   font-size: 13px;
 }
+.form-message {
+  color: var(--green);
+  min-height: 20px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.user-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+.user-card {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--white);
+}
+.user-card strong,
+.user-card small {
+  display: block;
+}
+.user-card small {
+  color: var(--muted);
+  margin-top: 4px;
+}
+.user-status {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--mint);
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 750;
+}
+.user-status.pending,
+.user-status.disabled {
+  background: #f8e9e7;
+  color: var(--danger);
+}
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 8px;
+}
 .event-dialog {
   width: min(440px, calc(100% - 32px));
   border: 0;
@@ -802,6 +850,12 @@ select option {
   }
   .hero-card .status-orbit {
     margin-left: 10px;
+  }
+  .user-card {
+    grid-template-columns: 1fr;
+  }
+  .user-actions {
+    justify-content: start;
   }
   .top-actions #exitButton {
     font-size: 0;
