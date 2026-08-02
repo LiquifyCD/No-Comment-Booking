@@ -8,6 +8,7 @@ const state = {
   polling: false,
   runtime: "idle",
   eventSource: null,
+  streamController: null,
   reconnectTimer: null,
   streamRecovering: false,
   catalog: { licences: [], examinationTypes: [], locations: [] },
@@ -28,6 +29,16 @@ function toast(message) {
   node.classList.add("visible");
   clearTimeout(node.timer);
   node.timer = setTimeout(() => node.classList.remove("visible"), 3200);
+}
+function setConnectionState(connectionState) {
+  const badge = $("#connectionBadge");
+  const labels = {
+    live: "Live",
+    reconnecting: "Återansluter",
+    offline: "Offline",
+  };
+  badge.className = `connection-badge ${connectionState}`;
+  badge.textContent = labels[connectionState] || labels.reconnecting;
 }
 async function api(path, options = {}) {
   const headers = {
@@ -388,9 +399,10 @@ async function poll() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const data = await api(`/api/events?after=${state.lastEvent}`, {
+    const data = await api(`/api/live?after=${state.lastEvent}`, {
       signal: controller.signal,
     });
+    setConnectionState("live");
     setRuntime(data.state);
     updateBankId(data.bankId);
     nextDelay = data.state === "authentication" ? 1000 : 5000;
@@ -405,6 +417,7 @@ async function poll() {
       showLogin();
     } else {
       nextDelay = 2000;
+      setConnectionState(navigator.onLine ? "reconnecting" : "offline");
       console.error(error);
     }
   } finally {
@@ -430,6 +443,8 @@ function stopEventStream() {
   state.reconnectTimer = null;
   if (state.eventSource) state.eventSource.close();
   state.eventSource = null;
+  if (state.streamController) state.streamController.abort();
+  state.streamController = null;
 }
 function scheduleEventStream(delay = 2000) {
   clearTimeout(state.reconnectTimer);
@@ -440,23 +455,32 @@ async function recoverEventStream() {
   if (state.streamRecovering) return;
   state.streamRecovering = true;
   try {
-    applySnapshot(await api(`/api/events?after=${state.lastEvent}`));
+    applySnapshot(await api(`/api/live?after=${state.lastEvent}`));
     scheduleEventStream();
   } catch (error) {
     if (error.status === 401) showLogin();
-    else scheduleEventStream(5000);
+    else {
+      setConnectionState(navigator.onLine ? "reconnecting" : "offline");
+      scheduleEventStream(5000);
+    }
   } finally {
     state.streamRecovering = false;
   }
 }
 function connectEventStream() {
+  if (!navigator.onLine) {
+    setConnectionState("offline");
+    return;
+  }
   if (!("EventSource" in window)) {
-    pollNow();
+    connectFetchStream();
     return;
   }
   stopEventStream();
-  const source = new EventSource(`/api/events/stream?after=${state.lastEvent}`);
+  setConnectionState("reconnecting");
+  const source = new EventSource(`/api/live/stream?after=${state.lastEvent}`);
   state.eventSource = source;
+  source.onopen = () => setConnectionState("live");
   source.onmessage = (event) => {
     try {
       applySnapshot(JSON.parse(event.data));
@@ -473,6 +497,52 @@ function connectEventStream() {
     if (state.eventSource === source) state.eventSource = null;
     recoverEventStream();
   };
+}
+async function connectFetchStream() {
+  stopEventStream();
+  setConnectionState("reconnecting");
+  const controller = new AbortController();
+  state.streamController = controller;
+  try {
+    const response = await fetch(`/api/live/stream?after=${state.lastEvent}`, {
+      credentials: "same-origin",
+      headers: { Accept: "text/event-stream" },
+      signal: controller.signal,
+    });
+    if (response.status === 401) {
+      showLogin();
+      return;
+    }
+    if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+    setConnectionState("live");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() || "";
+      for (const block of blocks) {
+        if (block.startsWith("event: auth")) {
+          showLogin();
+          return;
+        }
+        const data = block
+          .split("\n")
+          .filter((line) => line.startsWith("data: "))
+          .map((line) => line.slice(6))
+          .join("\n");
+        if (data) applySnapshot(JSON.parse(data));
+      }
+    }
+    throw new Error("Live stream closed");
+  } catch (error) {
+    if (error.name !== "AbortError") recoverEventStream();
+  } finally {
+    if (state.streamController === controller) state.streamController = null;
+  }
 }
 function showLogin() {
   clearTimeout(state.pollTimer);
@@ -820,6 +890,10 @@ form.addEventListener("input", updateMetrics);
 enforceDateMinimum();
 setInterval(enforceDateMinimum, 30_000);
 window.addEventListener("online", connectEventStream);
+window.addEventListener("offline", () => {
+  stopEventStream();
+  setConnectionState("offline");
+});
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && !state.eventSource) connectEventStream();
 });

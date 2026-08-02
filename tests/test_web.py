@@ -79,8 +79,9 @@ class LocalWebTests(unittest.TestCase):
         self.assertEqual("no-store", response.headers["cache-control"])
 
     def test_event_stream_is_authenticated_and_documented(self):
-        self.assertEqual(401, self.client.get("/api/events/stream").status_code)
-        self.assertIn("/api/events/stream", self.app.openapi()["paths"])
+        self.assertEqual(401, self.client.get("/api/live/stream").status_code)
+        self.assertIn("/api/live/stream", self.app.openapi()["paths"])
+        self.assertNotIn("/api/events/stream", self.app.openapi()["paths"])
 
     def test_bankid_and_catalog_endpoints_keep_sensitive_input_in_request_body(self):
         bootstrap = self.login()

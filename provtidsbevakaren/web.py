@@ -278,13 +278,15 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         registry.remove_user(account.username)
         return account.public_dict()
 
-    @app.get("/api/events")
+    @app.get("/api/events", include_in_schema=False)
+    @app.get("/api/live")
     async def events(
         after: int = 0, session: UserSession = Depends(current_session)
     ) -> dict[str, Any]:
         return registry.for_user(session.user_id).snapshot(max(0, after))
 
-    @app.get("/api/events/stream")
+    @app.get("/api/events/stream", include_in_schema=False)
+    @app.get("/api/live/stream")
     async def event_stream(
         request: Request,
         after: int = 0,
