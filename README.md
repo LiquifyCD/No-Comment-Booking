@@ -40,7 +40,7 @@ The executable is written to `dist\No-Comment-Booking.exe`.
 - The backend keeps BankID reference, QR secret, and autostart token out of frontend state.
 - The authenticated identity stays server-side and is omitted from bootstrap, event, and log responses.
 - After login, `licence-information` supplies readable licence choices.
-- Selecting a licence loads its examination types and all available locations from `search-information`.
+- Selecting a licence loads its examination types, vehicle/rental choices, and all available locations from `search-information`.
 - Locations are deduplicated, alphabetically sorted, and searchable.
 - A found slot can trigger notification, automatic reservation, or automatic Pay later booking.
 - A reserved slot remains available in the dashboard for a guarded, single-click Pay later completion attempt.

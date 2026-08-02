@@ -22,12 +22,16 @@ class BookingCatalog:
     licences: tuple[CatalogItem, ...]
     examination_types: tuple[CatalogItem, ...]
     locations: tuple[CatalogItem, ...]
+    vehicle_types: tuple[CatalogItem, ...] = ()
+    occasion_choices: tuple[CatalogItem, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "licences": [item.as_dict() for item in self.licences],
             "examinationTypes": [item.as_dict() for item in self.examination_types],
             "locations": [item.as_dict() for item in self.locations],
+            "vehicleTypes": [item.as_dict() for item in self.vehicle_types],
+            "occasionChoices": [item.as_dict() for item in self.occasion_choices],
         }
 
 
@@ -38,6 +42,8 @@ ID_KEYS = (
     "licenseId",
     "examinationTypeId",
     "locationId",
+    "vehicleTypeId",
+    "occasionChoiceId",
 )
 NAME_KEYS = (
     "name",
@@ -49,6 +55,8 @@ NAME_KEYS = (
     "licenseName",
     "examinationTypeName",
     "locationName",
+    "vehicleTypeName",
+    "occasionChoiceName",
     "city",
     "languageKeyName",
 )
@@ -133,9 +141,29 @@ def parse_booking_catalog(
         ),
         translations,
     )
-    if not (licences or examination_types or locations):
+    vehicle_types = _flatten_items(
+        _named_lists(
+            data,
+            {"vehicletypes", "vehicleoptions", "transmissions", "gearboxes"},
+        ),
+        translations,
+    )
+    occasion_choices = _flatten_items(
+        _named_lists(
+            data,
+            {"occasionchoices", "occasionoptions", "rentalchoices", "rentaloptions"},
+        ),
+        translations,
+    )
+    if not (licences or examination_types or locations or vehicle_types or occasion_choices):
         raise ApiResponseError("Tjänsten returnerade ingen användbar bokningskatalog")
-    return BookingCatalog(licences, examination_types, locations)
+    return BookingCatalog(
+        licences,
+        examination_types,
+        locations,
+        vehicle_types,
+        occasion_choices,
+    )
 
 
 def parse_translations(response: dict[str, Any]) -> dict[str, str]:

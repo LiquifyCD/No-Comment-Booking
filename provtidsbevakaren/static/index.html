@@ -211,6 +211,16 @@
                     <option value="">Välj behörighet först</option>
                   </select>
                 </label>
+                <label>Växellåda / fordonstyp *
+                  <select name="vehicle_type_id" required disabled>
+                    <option value="">Välj behörighet först</option>
+                  </select>
+                </label>
+                <label>Hyrbilsalternativ *
+                  <select name="occasion_choice_id" required disabled>
+                    <option value="">Välj behörighet först</option>
+                  </select>
+                </label>
                 <label class="wide-field">Sök provort
                   <input id="locationSearch" type="search" placeholder="Skriv ett ortsnamn" autocomplete="off" />
                 </label>
@@ -376,8 +386,11 @@
               </div>
             </article>
 
-            <details class="panel advanced">
-              <summary>Avancerade provinställningar</summary>
+            <input name="tachograph_type_id" type="hidden" value="1" />
+            <input name="language_id" type="hidden" value="13" />
+            <details id="manualFallback" class="panel advanced" hidden>
+              <summary>Manuell reserv för bokningsalternativ</summary>
+              <p class="muted">Visas endast när Trafikverkets API inte kunde lämna kompletta alternativ.</p>
               <div class="form-grid advanced-grid">
                 <label
                   >Manuellt Behörighets-ID<input
@@ -402,31 +415,15 @@
                 </button>
                 <label
                   >Fordonstyp-ID<input
-                    name="vehicle_type_id"
+                    name="manual_vehicle_type_id"
                     type="number"
                     min="1"
-                    value="1"
-                /></label>
-                <label
-                  >Färdskrivartyp-ID<input
-                    name="tachograph_type_id"
-                    type="number"
-                    min="1"
-                    value="1"
                 /></label>
                 <label
                   >Valtyp-ID<input
-                    name="occasion_choice_id"
+                    name="manual_occasion_choice_id"
                     type="number"
                     min="1"
-                    value="1"
-                /></label>
-                <label
-                  >Språk-ID<input
-                    name="language_id"
-                    type="number"
-                    min="1"
-                    value="13"
                 /></label>
               </div>
             </details>

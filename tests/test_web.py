@@ -91,6 +91,9 @@ class LocalWebTests(unittest.TestCase):
         self.assertNotIn("/api/events", transport)
         self.assertLess(page.index("live-transport.js"), page.index("app.js"))
         self.assertIn('id="identityFallback" class="identity-fallback" hidden', page)
+        self.assertIn('id="manualFallback" class="panel advanced" hidden', page)
+        self.assertIn('name="vehicle_type_id" required disabled', page)
+        self.assertIn('name="occasion_choice_id" required disabled', page)
         self.assertNotIn('id="name"', page)
 
     def test_bootstrap_never_returns_saved_name_or_personnummer(self):

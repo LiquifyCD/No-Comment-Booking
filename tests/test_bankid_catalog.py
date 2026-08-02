@@ -153,6 +153,13 @@ class CatalogTests(unittest.TestCase):
                     {"locationId": 1, "locationName": "Alingsås"},
                 ],
                 "nearbyLocations": [{"locationId": 2, "locationName": "Örebro"}],
+                "vehicleTypes": [
+                    {"vehicleTypeId": 1, "vehicleTypeName": "Manuell"},
+                    {"vehicleTypeId": 2, "vehicleTypeName": "Automat"},
+                ],
+                "occasionChoices": [
+                    {"occasionChoiceId": 3, "occasionChoiceName": "Hyrbil"}
+                ],
             }
         }
         parsed = parse_booking_catalog(response)
@@ -161,6 +168,8 @@ class CatalogTests(unittest.TestCase):
             ["Kunskapsprov", "Körprov"], [item.name for item in parsed.examination_types]
         )
         self.assertEqual([1, 2], [item.id for item in parsed.locations])
+        self.assertEqual([2, 1], [item.id for item in parsed.vehicle_types])
+        self.assertEqual([3], [item.id for item in parsed.occasion_choices])
         self.assertEqual(52, resolve_item_id(parsed.examination_types, "körprov"))
 
     def test_empty_catalog_is_rejected(self):
@@ -209,6 +218,8 @@ class CatalogTests(unittest.TestCase):
                             {"id": 2, "name": "Örebro"},
                             {"id": 1, "name": "Alingsås"},
                         ],
+                        "vehicleTypes": [{"id": 7, "name": "Automat"}],
+                        "occasionChoices": [{"id": 9, "name": "Hyrbil"}],
                     }
                 }
             )
@@ -217,6 +228,32 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(
                 ["Alingsås", "Örebro"], [item["name"] for item in selected["locations"]]
             )
+            self.assertEqual([7], [item["id"] for item in selected["vehicleTypes"]])
+            self.assertEqual([9], [item["id"] for item in selected["occasionChoices"]])
+            job.close()
+
+    def test_runtime_rejects_related_option_not_returned_by_api(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job = MonitorJob("test", load_settings({}), VolatileStateStore(), Path(directory))
+            job._bankid._state = "complete"
+            job._bankid._personal_number = "20000101-1234"
+            job._catalog = BookingCatalog(
+                (CatalogItem(23, "B"),),
+                (CatalogItem(52, "Körprov"),),
+                (CatalogItem(1, "Alingsås"),),
+                (CatalogItem(7, "Automat"),),
+                (CatalogItem(9, "Hyrbil"),),
+            )
+            with self.assertRaisesRegex(engine.BotError, "fordonstyp"):
+                job.start(
+                    {
+                        "licence_id": 23,
+                        "examination_type_id": 52,
+                        "location_id": 1,
+                        "vehicle_type_id": 1,
+                        "occasion_choice_id": 9,
+                    }
+                )
             job.close()
 
     def test_runtime_uses_bankid_identity_without_name_or_personnummer_input(self):

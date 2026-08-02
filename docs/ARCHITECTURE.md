@@ -31,7 +31,7 @@ RuntimeRegistry -- one MonitorJob per user
 4. Completion is accepted only after a separate authorization check succeeds.
 5. The backend captures an allowlisted identity field from the authenticated API response without returning it to the browser.
 6. The backend loads Swedish language resources and `licence-information`; the UI selects the saved or first available licence.
-7. `search-information` then loads examination types and locations. Manual personnummer appears only if authenticated API responses contained no usable identity.
+7. `search-information` then loads examination types, vehicle/rental choices, cities, and locations. Manual fallback fields appear only if authenticated API responses are incomplete.
 
 The same in-memory `requests.Session` is reused for monitoring and reservation. No Trafikverket cookie or BankID secret is persisted.
 

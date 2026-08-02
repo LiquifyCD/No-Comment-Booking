@@ -341,6 +341,8 @@ class MonitorJob:
                         tuple(sorted(licences.values(), key=lambda item: item.name.casefold())),
                         fresh.examination_types,
                         fresh.locations,
+                        fresh.vehicle_types,
+                        fresh.occasion_choices,
                     )
                 self._catalog = fresh
                 self._catalog_updated_at = time.time()
@@ -356,6 +358,8 @@ class MonitorJob:
             (current.licences, config.licence_id, "behörighet"),
             (current.examination_types, config.examination_type_id, "provtyp"),
             (current.locations, config.location_id, "provort"),
+            (current.vehicle_types, config.vehicle_type_id, "fordonstyp"),
+            (current.occasion_choices, config.occasion_choice_id, "hyrbilsalternativ"),
         )
         for items, selected, label in checks:
             if items and selected not in {item.id for item in items}:

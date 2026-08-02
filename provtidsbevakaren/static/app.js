@@ -5,7 +5,13 @@ const state = {
   csrf: "",
   lastEvent: 0,
   runtime: "idle",
-  catalog: { licences: [], examinationTypes: [], locations: [] },
+  catalog: {
+    licences: [],
+    examinationTypes: [],
+    locations: [],
+    vehicleTypes: [],
+    occasionChoices: [],
+  },
   qrVersion: 0,
   authenticated: false,
   browserFallbackAvailable: true,
@@ -101,7 +107,14 @@ function setOptions(select, items, placeholder, selectedValue = "") {
     select.add(new Option(label, String(item.id)));
   }
   select.disabled = items.length === 0;
-  if (selectedValue) ensureSavedOption(select, selectedValue, "Unavailable saved selection");
+  if (
+    selectedValue
+      && [...select.options].some((option) => option.value === String(selectedValue))
+  ) {
+    select.value = String(selectedValue);
+  } else if (items.length === 1) {
+    select.value = String(items[0].id);
+  }
 }
 function filterLocations(query = "") {
   const wanted = query.trim().toLocaleLowerCase("sv-SE");
@@ -137,6 +150,23 @@ function applyCatalog(data) {
     "Välj en provtyp",
     state.savedConfig?.examination_type_id,
   );
+  setOptions(
+    form.elements.vehicle_type_id,
+    data.vehicleTypes || [],
+    "Välj ett tillgängligt alternativ",
+    state.savedConfig?.vehicle_type_id,
+  );
+  setOptions(
+    form.elements.occasion_choice_id,
+    data.occasionChoices || [],
+    "Välj ett tillgängligt alternativ",
+    state.savedConfig?.occasion_choice_id,
+  );
+  const relatedMissing = Boolean(
+    (data.examinationTypes || []).length
+      && (!(data.vehicleTypes || []).length || !(data.occasionChoices || []).length),
+  );
+  $("#manualFallback").hidden = !relatedMissing;
   filterLocations($("#locationSearch").value);
 }
 async function refreshCatalog(licenceId = 0) {
@@ -325,6 +355,7 @@ function updateBankId(bankId) {
       state.catalogAttempted = true;
       initializeCatalog().catch((error) => {
         showIdentityFallback(error);
+        $("#manualFallback").hidden = false;
         toast(error.message);
         $("#bankidSummary").textContent = "Anslutet — alternativen kunde inte hämtas";
       });
@@ -621,6 +652,10 @@ $("#bankidButton").addEventListener("click", async () => {
     $("#bankidStatus").textContent = "Förbereder säker inloggning…";
     if (!$("#bankidDialog").open) $("#bankidDialog").showModal();
   } catch (error) {
+    if (state.authenticated) {
+      showIdentityFallback(error);
+      $("#manualFallback").hidden = false;
+    }
     toast(error.message);
   }
 });
@@ -679,6 +714,8 @@ $("#manualIdsButton").addEventListener("click", () => {
     ["manual_licence_id", "licence_id", "Manuell behörighet"],
     ["manual_examination_type_id", "examination_type_id", "Manuell provtyp"],
     ["manual_location_id", "location_id", "Manuell provort"],
+    ["manual_vehicle_type_id", "vehicle_type_id", "Manuell fordonstyp"],
+    ["manual_occasion_choice_id", "occasion_choice_id", "Manuellt hyrbilsalternativ"],
   ];
   for (const [inputName, selectName, label] of mappings) {
     const value = form.elements[inputName].value;
