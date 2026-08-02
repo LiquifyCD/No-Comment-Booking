@@ -84,11 +84,12 @@ class LocalWebTests(unittest.TestCase):
         self.assertNotIn("/api/events/stream", self.app.openapi()["paths"])
 
     def test_frontend_uses_neutral_live_stream_and_hides_identity_fallback(self):
-        script = self.client.get("/static/app.js").text
+        transport = self.client.get("/static/live-transport.js").text
         page = self.client.get("/static/index.html").text
-        self.assertIn("/api/live?after=", script)
-        self.assertIn("new EventSource(`/api/live/stream?after=", script)
-        self.assertNotIn("/api/events", script)
+        self.assertIn("/api/live?after=", transport)
+        self.assertIn("/api/live/stream?after=", transport)
+        self.assertNotIn("/api/events", transport)
+        self.assertLess(page.index("live-transport.js"), page.index("app.js"))
         self.assertIn('id="identityFallback" class="identity-fallback" hidden', page)
         self.assertNotIn('id="name"', page)
 

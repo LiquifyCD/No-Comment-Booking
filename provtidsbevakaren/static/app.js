@@ -4,13 +4,7 @@ const state = {
   mode: "local",
   csrf: "",
   lastEvent: 0,
-  pollTimer: null,
-  polling: false,
   runtime: "idle",
-  eventSource: null,
-  streamController: null,
-  reconnectTimer: null,
-  streamRecovering: false,
   catalog: { licences: [], examinationTypes: [], locations: [] },
   qrVersion: 0,
   authenticated: false,
@@ -409,45 +403,6 @@ function showDialog(title, message, url = "", eventType = "") {
   $("#reservationBook").hidden = !["reserved", "booking_error"].includes(eventType);
   $("#eventDialog").showModal();
 }
-async function poll() {
-  if (state.polling) return;
-  state.polling = true;
-  let continuePolling = true;
-  let nextDelay = 5000;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-  try {
-    const data = await api(`/api/live?after=${state.lastEvent}`, {
-      signal: controller.signal,
-    });
-    setConnectionState("live");
-    setRuntime(data.state);
-    updateBankId(data.bankId);
-    nextDelay = data.state === "authentication" ? 1000 : 5000;
-    for (const event of data.events) {
-      state.lastEvent = Math.max(state.lastEvent, event.id);
-      addEvent(event);
-    }
-  } catch (error) {
-    if (error.status === 401) {
-      continuePolling = false;
-      clearTimeout(state.pollTimer);
-      showLogin();
-    } else {
-      nextDelay = 2000;
-      setConnectionState(navigator.onLine ? "reconnecting" : "offline");
-      console.error(error);
-    }
-  } finally {
-    clearTimeout(timeout);
-    state.polling = false;
-    if (continuePolling) state.pollTimer = setTimeout(poll, nextDelay);
-  }
-}
-function pollNow() {
-  clearTimeout(state.pollTimer);
-  poll();
-}
 function applySnapshot(data) {
   setRuntime(data.state);
   updateBankId(data.bankId);
@@ -456,114 +411,26 @@ function applySnapshot(data) {
     addEvent(event);
   }
 }
+const liveTransport = new window.LiveTransport({
+  EventSource: window.EventSource || null,
+  AbortController: window.AbortController,
+  TextDecoder: window.TextDecoder,
+  fetch: window.fetch.bind(window),
+  setTimeout: window.setTimeout.bind(window),
+  clearTimeout: window.clearTimeout.bind(window),
+  isOnline: () => navigator.onLine,
+  getCursor: () => state.lastEvent,
+  onState: setConnectionState,
+  onSnapshot: applySnapshot,
+  onUnauthorized: showLogin,
+});
 function stopEventStream() {
-  clearTimeout(state.reconnectTimer);
-  state.reconnectTimer = null;
-  if (state.eventSource) state.eventSource.close();
-  state.eventSource = null;
-  if (state.streamController) state.streamController.abort();
-  state.streamController = null;
-}
-function scheduleEventStream(delay = 2000) {
-  clearTimeout(state.reconnectTimer);
-  if (!navigator.onLine) return;
-  state.reconnectTimer = setTimeout(connectEventStream, delay);
-}
-async function recoverEventStream() {
-  if (state.streamRecovering) return;
-  state.streamRecovering = true;
-  try {
-    applySnapshot(await api(`/api/live?after=${state.lastEvent}`));
-    scheduleEventStream();
-  } catch (error) {
-    if (error.status === 401) showLogin();
-    else {
-      setConnectionState(navigator.onLine ? "reconnecting" : "offline");
-      scheduleEventStream(5000);
-    }
-  } finally {
-    state.streamRecovering = false;
-  }
+  liveTransport.stop();
 }
 function connectEventStream() {
-  if (!navigator.onLine) {
-    setConnectionState("offline");
-    return;
-  }
-  if (!("EventSource" in window)) {
-    connectFetchStream();
-    return;
-  }
-  stopEventStream();
-  setConnectionState("reconnecting");
-  const source = new EventSource(`/api/live/stream?after=${state.lastEvent}`);
-  state.eventSource = source;
-  source.onopen = () => setConnectionState("live");
-  source.onmessage = (event) => {
-    try {
-      applySnapshot(JSON.parse(event.data));
-    } catch (error) {
-      console.error(error);
-    }
-  };
-  source.addEventListener("auth", () => {
-    stopEventStream();
-    showLogin();
-  });
-  source.onerror = () => {
-    source.close();
-    if (state.eventSource === source) state.eventSource = null;
-    recoverEventStream();
-  };
-}
-async function connectFetchStream() {
-  stopEventStream();
-  setConnectionState("reconnecting");
-  const controller = new AbortController();
-  state.streamController = controller;
-  try {
-    const response = await fetch(`/api/live/stream?after=${state.lastEvent}`, {
-      credentials: "same-origin",
-      headers: { Accept: "text/event-stream" },
-      signal: controller.signal,
-    });
-    if (response.status === 401) {
-      showLogin();
-      return;
-    }
-    if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-    setConnectionState("live");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split("\n\n");
-      buffer = blocks.pop() || "";
-      for (const block of blocks) {
-        if (block.startsWith("event: auth")) {
-          showLogin();
-          return;
-        }
-        const data = block
-          .split("\n")
-          .filter((line) => line.startsWith("data: "))
-          .map((line) => line.slice(6))
-          .join("\n");
-        if (data) applySnapshot(JSON.parse(data));
-      }
-    }
-    throw new Error("Live stream closed");
-  } catch (error) {
-    if (error.name !== "AbortError") recoverEventStream();
-  } finally {
-    if (state.streamController === controller) state.streamController = null;
-  }
+  liveTransport.start();
 }
 function showLogin() {
-  clearTimeout(state.pollTimer);
   stopEventStream();
   state.csrf = "";
   $("#appView").hidden = true;
@@ -750,7 +617,7 @@ $("#bankidButton").addEventListener("click", async () => {
     }
     state.catalogAttempted = false;
     await api("/api/bankid/start", { method: "POST", body: "{}" });
-    if (!state.eventSource) connectEventStream();
+    connectEventStream();
     $("#bankidStatus").textContent = "Förbereder säker inloggning…";
     if (!$("#bankidDialog").open) $("#bankidDialog").showModal();
   } catch (error) {
@@ -774,7 +641,7 @@ $("#bankidRetry").addEventListener("click", async () => {
   try {
     state.catalogAttempted = false;
     await api("/api/bankid/retry", { method: "POST", body: "{}" });
-    if (!state.eventSource) connectEventStream();
+    connectEventStream();
     $("#bankidStatus").textContent = "Förbereder ett nytt inloggningsförsök…";
     $("#bankidRetry").hidden = true;
     $("#bankidFallback").hidden = true;
@@ -918,13 +785,12 @@ document.querySelectorAll(".nav-link").forEach((link) =>
 form.addEventListener("input", updateMetrics);
 enforceDateMinimum();
 setInterval(enforceDateMinimum, 30_000);
-window.addEventListener("online", connectEventStream);
+window.addEventListener("online", () => liveTransport.resume());
 window.addEventListener("offline", () => {
-  stopEventStream();
-  setConnectionState("offline");
+  liveTransport.offline();
 });
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && !state.eventSource) connectEventStream();
+  if (document.visibilityState === "visible") liveTransport.resume();
 });
 bootstrap().catch((error) => {
   console.error(error);
