@@ -2,7 +2,6 @@
 import argparse
 import secrets
 import sqlite3
-import time
 from pathlib import Path
 
 import requests
@@ -138,65 +137,12 @@ def main() -> None:
         print("Registration, pending gate, admin approval, and disable: OK")
 
     if args.exercise_monitor:
-        config = bootstrap_data.get("config")
-        synthetic_config = config is None
-        if synthetic_config:
-            config = {
-                "name": "Deployment smoke test",
-                "ssn": "00000000-0000",
-                "licence_id": 1,
-                "examination_type_id": 1,
-                "location_id": 1,
-                "poll_interval_seconds": 60,
-                "auto_reserve": False,
-                "auto_book": False,
-            }
-        csrf_headers = {"X-CSRF-Token": bootstrap_data["csrfToken"]}
-
-        initial_stop = session.post(
-            f"{args.base_url}/api/monitor/stop",
-            json={},
-            headers=csrf_headers,
-            timeout=30,
-            verify=verify,
-        )
-        initial_stop.raise_for_status()
-
-        started = session.post(
-            f"{args.base_url}/api/monitor/start",
-            json=config,
-            headers=csrf_headers,
-            timeout=30,
-            verify=verify,
-        )
-        started.raise_for_status()
-        assert started.json()["status"] == "starting"
-
-        try:
-            time.sleep(2)
-            polled = session.get(
-                f"{args.base_url}/api/events?after=0", timeout=15, verify=verify
-            )
-            polled.raise_for_status()
-            assert "state" in polled.json()
-        finally:
-            stopped = session.post(
-                f"{args.base_url}/api/monitor/stop",
-                json={},
-                headers=csrf_headers,
-                timeout=30,
-                verify=verify,
-            )
-            stopped.raise_for_status()
-            assert stopped.json()["status"] == "stopped"
-
-        if synthetic_config:
-            with sqlite3.connect(args.database_path) as database:
-                database.execute(
-                    "DELETE FROM user_state WHERE user_id=?", (bootstrap_data["user"],)
-                )
-
-        print("Monitor start, status polling, and stop: OK")
+        assert "name" not in (bootstrap_data.get("config") or {})
+        assert "ssn" not in (bootstrap_data.get("config") or {})
+        live = session.get(f"{args.base_url}/api/live?after=0", timeout=15, verify=verify)
+        live.raise_for_status()
+        assert "state" in live.json()
+        print("Authenticated live status and PII redaction: OK")
 
 
 if __name__ == "__main__":

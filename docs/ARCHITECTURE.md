@@ -29,8 +29,9 @@ RuntimeRegistry -- one MonitorJob per user
 2. The QR code rotates from status responses every two seconds.
 3. The frontend receives only a backend-rendered SVG and sanitized status.
 4. Completion is accepted only after a separate authorization check succeeds.
-5. The backend loads Swedish language resources and `licence-information`.
-6. Selecting a licence calls `search-information` for examination types and locations.
+5. The backend captures an allowlisted identity field from the authenticated API response without returning it to the browser.
+6. The backend loads Swedish language resources and `licence-information`; the UI selects the saved or first available licence.
+7. `search-information` then loads examination types and locations. Manual personnummer appears only if authenticated API responses contained no usable identity.
 
 The same in-memory `requests.Session` is reused for monitoring and reservation. No Trafikverket cookie or BankID secret is persisted.
 
@@ -44,4 +45,4 @@ Server mode uses password login, Secure/HttpOnly/SameSite cookies, CSRF protecti
 
 A job moves through `idle`, `starting`, `authentication`, `authenticated`, `running`, `action_required`, `stopping`, and `error`. Locks reject overlapping authentication, catalog refresh, monitor start, and invoice completion. Catalog access is disabled during monitoring so the shared Trafikverket session cannot issue competing stateful calls.
 
-Events use monotonic IDs in a bounded buffer. Frontend polling is self-sequenced, preventing overlapping requests and duplicate rendering. Date minimums are refreshed in the UI and recalculated in the configured IANA timezone for every backend validation and slot filter.
+Events use monotonic IDs in a bounded buffer. The frontend maintains one same-origin SSE connection, resumes from the last ID after reconnect, and performs only a bounded recovery snapshot if the stream fails. The neutral `/api/live` path avoids common privacy-filter rules. Date minimums are refreshed in the UI and recalculated in the configured IANA timezone for every backend validation and slot filter.

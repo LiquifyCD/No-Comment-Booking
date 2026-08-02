@@ -8,9 +8,9 @@ An opt-in server runtime is included for later deployment. It remains disabled u
 
 1. Download or build `No-Comment-Booking.exe`.
 2. Double-click it. The application binds only to `127.0.0.1` and opens the dashboard.
-3. Enter the identity number and select **Connect Mobile BankID**.
-4. Scan the rotating QR code shown inside the dashboard, or open BankID on the same device.
-5. Select a licence, examination type, and searchable test location by name. Their numeric IDs are resolved automatically from Trafikverket's API.
+3. Select **Connect Mobile BankID** and scan the rotating QR code, or open BankID on the same device.
+4. Your identity, available licences, examination types, and searchable test locations are loaded automatically from Trafikverket's API. Personnummer is requested manually only if the API does not return it after successful BankID authentication.
+5. Select the examination type and test location you want to monitor.
 6. Start monitoring.
 
 The start-date minimum is always the user's current local date and is revalidated by the backend. Trafikverket cookies and BankID challenge data exist only in process memory and are cleared when the program closes. The separate browser flow is retained only as an explicit fallback if integrated authentication fails.
@@ -38,6 +38,7 @@ The executable is written to `dist\No-Comment-Booking.exe`.
 
 - Mobile BankID starts and rotates its QR code inside the dashboard.
 - The backend keeps BankID reference, QR secret, and autostart token out of frontend state.
+- The authenticated identity stays server-side and is omitted from bootstrap, event, and log responses.
 - After login, `licence-information` supplies readable licence choices.
 - Selecting a licence loads its examination types and all available locations from `search-information`.
 - Locations are deduplicated, alphabetically sorted, and searchable.
@@ -83,6 +84,7 @@ Never commit the environment file. See [architecture](docs/ARCHITECTURE.md) and 
 - Duplicate BankID, catalog, monitoring, and booking actions are guarded.
 - Failed catalog refreshes leave the last valid in-memory catalog intact.
 - Missing fields and expired authentication produce explicit UI errors.
+- Live status uses one same-origin SSE connection, reconnects automatically, and falls back to a bounded snapshot request only while recovering.
 - Logs and public API state exclude identity numbers, cookies, webhook URLs, and BankID challenge secrets.
 
 No-Comment-Booking is not an official Trafikverket service.
