@@ -157,9 +157,7 @@ class CatalogTests(unittest.TestCase):
                     {"vehicleTypeId": 1, "vehicleTypeName": "Manuell"},
                     {"vehicleTypeId": 2, "vehicleTypeName": "Automat"},
                 ],
-                "occasionChoices": [
-                    {"occasionChoiceId": 3, "occasionChoiceName": "Hyrbil"}
-                ],
+                "occasionChoices": [{"occasionChoiceId": 3, "occasionChoiceName": "Hyrbil"}],
             }
         }
         parsed = parse_booking_catalog(response)
@@ -176,6 +174,32 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaises(engine.ApiResponseError):
             parse_booking_catalog({"data": {}})
 
+    def test_adaptive_catalog_maps_nested_variants_without_mixing_ids(self):
+        parsed = parse_booking_catalog(
+            {
+                "data": {
+                    "wizard": {
+                        "provtyper": [
+                            {"testTypeId": 51, "label": "Kunskapsprov"},
+                            {"testTypeId": 52, "label": "Körprov"},
+                        ],
+                        "växellåda": {"7": "Automat"},
+                        "hyrbil": {"9": "Hyrbil"},
+                    },
+                    "result": {
+                        "orter": [
+                            {"locationId": 100, "title": "Farsta"},
+                            {"locationId": 101, "title": "Visby"},
+                        ]
+                    },
+                }
+            }
+        )
+        self.assertEqual([51, 52], [item.id for item in parsed.examination_types])
+        self.assertEqual([(7, "Automat")], [(item.id, item.name) for item in parsed.vehicle_types])
+        self.assertEqual([9], [item.id for item in parsed.occasion_choices])
+        self.assertEqual([100, 101], [item.id for item in parsed.locations])
+
     def test_language_resource_keys_become_readable_names(self):
         translations = parse_translations(
             {"data": {"resources": [{"key": "licenceB", "value": "B - Personbil"}]}}
@@ -189,6 +213,20 @@ class CatalogTests(unittest.TestCase):
             translations,
         )
         self.assertEqual("B - Personbil", parsed.licences[0].name)
+
+    def test_nested_translation_shapes_are_supported(self):
+        translations = parse_translations(
+            {
+                "data": {
+                    "translations": {
+                        "licenceB": "B - Personbil",
+                        "nested": [{"resourceKey": "examDrive", "text": "Körprov"}],
+                    }
+                }
+            }
+        )
+        self.assertEqual("B - Personbil", translations["licenceB"])
+        self.assertEqual("Körprov", translations["examDrive"])
 
     def test_runtime_discovers_licences_then_exam_types_and_all_locations(self):
         with tempfile.TemporaryDirectory() as directory:

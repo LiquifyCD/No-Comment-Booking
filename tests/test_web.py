@@ -74,7 +74,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.2.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.3.0"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -217,6 +217,7 @@ class ServerWebTests(unittest.TestCase):
                 headers={"X-CSRF-Token": bootstrap["csrfToken"]},
             )
             self.assertEqual(503, response.status_code)
+
     def test_users_have_isolated_jobs_and_events(self):
         self.login()
         alice = self.client.get("/api/bootstrap").json()
@@ -252,9 +253,7 @@ class ServerWebTests(unittest.TestCase):
         headers = {"X-CSRF-Token": bootstrap["csrfToken"]}
         users = self.client.get("/api/admin/users").json()["users"]
         self.assertTrue(any(user["username"] == "charlie" for user in users))
-        approved = self.client.post(
-            "/api/admin/users/charlie/approve", json={}, headers=headers
-        )
+        approved = self.client.post("/api/admin/users/charlie/approve", json={}, headers=headers)
         self.assertEqual(200, approved.status_code)
         self.assertEqual("active", approved.json()["status"])
         self.assertFalse(approved.json()["paid"])

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -35,150 +36,221 @@ class BookingCatalog:
         }
 
 
-ID_KEYS = (
-    "id",
-    "value",
-    "licenceId",
-    "licenseId",
-    "examinationTypeId",
-    "locationId",
-    "vehicleTypeId",
-    "occasionChoiceId",
+def _normalized(value: object) -> str:
+    return re.sub(r"[^a-z0-9åäö]", "", str(value).casefold())
+
+
+@dataclass(frozen=True)
+class _CategorySpec:
+    name: str
+    container_hints: frozenset[str]
+    id_keys: frozenset[str]
+    name_keys: frozenset[str]
+
+
+_SPECS = (
+    _CategorySpec(
+        "licences",
+        frozenset({"licence", "license", "behörighet", "behörigheter"}),
+        frozenset({"licenceid", "licenseid", "licencecategoryid", "licensecategoryid"}),
+        frozenset({"licencename", "licensename", "licencetypename", "licensetypename"}),
+    ),
+    _CategorySpec(
+        "examinationTypes",
+        frozenset({"examination", "examtype", "testtype", "tests", "provtyp", "provtyper"}),
+        frozenset({"examinationtypeid", "examtypeid", "testtypeid"}),
+        frozenset({"examinationtypename", "examtypename", "testtypename"}),
+    ),
+    _CategorySpec(
+        "locations",
+        frozenset({"location", "locations", "city", "cities", "testlocation", "provort", "orter"}),
+        frozenset({"locationid", "testlocationid", "cityid", "officeid"}),
+        frozenset({"locationname", "testlocationname", "cityname", "officename"}),
+    ),
+    _CategorySpec(
+        "vehicleTypes",
+        frozenset(
+            {
+                "vehicle",
+                "vehicletype",
+                "vehicletypes",
+                "transmission",
+                "gearbox",
+                "fordonstyp",
+                "växellåda",
+            }
+        ),
+        frozenset({"vehicletypeid", "transmissiontypeid", "gearboxtypeid"}),
+        frozenset({"vehicletypename", "transmissiontypename", "gearboxtypename"}),
+    ),
+    _CategorySpec(
+        "occasionChoices",
+        frozenset({"occasion", "occasionchoice", "occasionchoices", "rental", "hirecar", "hyrbil"}),
+        frozenset({"occasionchoiceid", "rentaloptionid", "hirecaroptionid"}),
+        frozenset({"occasionchoicename", "rentaloptionname", "hirecaroptionname"}),
+    ),
 )
-NAME_KEYS = (
+
+_GENERIC_ID_KEYS = ("id", "value", "key")
+_GENERIC_NAME_KEYS = (
     "name",
     "text",
     "label",
     "title",
-    "description",
-    "licenceName",
-    "licenseName",
-    "examinationTypeName",
-    "locationName",
-    "vehicleTypeName",
-    "occasionChoiceName",
     "city",
-    "languageKeyName",
+    "languagekeyname",
+    "description",
 )
+_DESCRIPTION_KEYS = ("description", "languagekeydescription", "helptext")
 
 
-def _named_lists(value: Any, names: set[str]) -> Iterable[list[Any]]:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            normalized = key.replace("_", "").replace("-", "").casefold()
-            if normalized in names and isinstance(child, list):
-                yield child
-            yield from _named_lists(child, names)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _named_lists(child, names)
+@dataclass(frozen=True)
+class _Candidate:
+    item: CatalogItem
+    score: int
 
 
-def _item(raw: Any, translations: dict[str, str]) -> CatalogItem | None:
-    if not isinstance(raw, dict):
-        return None
-    raw_id = next((raw.get(key) for key in ID_KEYS if raw.get(key) not in (None, "")), None)
-    raw_name = next(
-        (raw.get(key) for key in NAME_KEYS if isinstance(raw.get(key), str) and raw[key].strip()),
-        None,
+def _first(mapping: dict[str, Any], keys: Iterable[str]) -> Any:
+    normalized = {_normalized(key): value for key, value in mapping.items()}
+    for key in keys:
+        value = normalized.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _path_matches(path: tuple[str, ...], hints: frozenset[str]) -> bool:
+    normalized_path = tuple(_normalized(part) for part in path)
+    return any(any(hint in part for hint in hints) for part in normalized_path)
+
+
+def _candidate(
+    raw: dict[str, Any],
+    path: tuple[str, ...],
+    spec: _CategorySpec,
+    translations: dict[str, str],
+) -> _Candidate | None:
+    explicit_id = _first(raw, spec.id_keys)
+    explicit_name = _first(raw, spec.name_keys)
+    hinted = _path_matches(path, spec.container_hints)
+    raw_id = (
+        explicit_id
+        if explicit_id is not None
+        else _first(raw, _GENERIC_ID_KEYS)
+        if hinted
+        else None
     )
+    raw_name = (
+        explicit_name
+        if isinstance(explicit_name, str) and explicit_name.strip()
+        else _first(raw, _GENERIC_NAME_KEYS)
+        if hinted or explicit_id is not None
+        else None
+    )
+    if raw_id is None or not isinstance(raw_name, str) or not raw_name.strip():
+        return None
     try:
         item_id = int(raw_id)
     except (TypeError, ValueError):
         return None
-    if item_id <= 0 or not raw_name:
+    if item_id <= 0:
         return None
-    name = translations.get(str(raw_name), str(raw_name)).strip()
-    raw_description = raw.get("description") or raw.get("languageKeyDescription") or ""
-    description = translations.get(str(raw_description), str(raw_description)).strip()
-    return CatalogItem(item_id, name, description)
+    name = translations.get(raw_name, raw_name).strip()
+    raw_description = _first(raw, _DESCRIPTION_KEYS)
+    description = (
+        translations.get(raw_description, raw_description).strip()
+        if isinstance(raw_description, str)
+        else ""
+    )
+    score = (
+        (4 if explicit_id is not None else 0) + (3 if explicit_name else 0) + (2 if hinted else 0)
+    )
+    return _Candidate(CatalogItem(item_id, name, description), score)
 
 
-def _flatten_items(
-    lists: Iterable[list[Any]], translations: dict[str, str]
-) -> tuple[CatalogItem, ...]:
-    by_id: dict[int, CatalogItem] = {}
-    pending = list(lists)
-    while pending:
-        values = pending.pop()
-        for raw in values:
-            item = _item(raw, translations)
-            if item:
-                current = by_id.get(item.id)
-                if current is None or item.name.casefold() < current.name.casefold():
-                    by_id[item.id] = item
-            if isinstance(raw, dict):
-                pending.extend(child for child in raw.values() if isinstance(child, list))
-    return tuple(sorted(by_id.values(), key=lambda item: (item.name.casefold(), item.id)))
+def _records(value: Any) -> Iterable[tuple[dict[str, Any], tuple[str, ...]]]:
+    def walk(child: Any, path: tuple[str, ...]) -> Iterable[tuple[dict[str, Any], tuple[str, ...]]]:
+        if isinstance(child, dict):
+            yield child, path
+            for key, nested in child.items():
+                if str(key).isdigit() and isinstance(nested, str) and nested.strip():
+                    yield {"id": key, "name": nested}, path
+                yield from walk(nested, (*path, str(key)))
+        elif isinstance(child, list):
+            for index, nested in enumerate(child):
+                yield from walk(nested, (*path, str(index)))
+
+    return walk(value, ("data",))
 
 
 def parse_booking_catalog(
     response: dict[str, Any], translations: dict[str, str] | None = None
 ) -> BookingCatalog:
     data = response.get("data")
-    if not isinstance(data, dict):
-        raise ApiResponseError("search-information saknar ett giltigt data-objekt")
-
+    if not isinstance(data, (dict, list)):
+        raise ApiResponseError("API-svaret saknar indexerbar data")
     translations = translations or {}
-    licences = _flatten_items(
-        _named_lists(data, {"licences", "licenses", "licenceoptions", "licenseoptions"}),
-        translations,
-    )
-    examination_types = _flatten_items(
-        _named_lists(data, {"examinationtypes", "examtypes", "tests", "testtypes"}),
-        translations,
-    )
-    locations = _flatten_items(
-        _named_lists(
-            data,
-            {
-                "locations",
-                "nearbylocations",
-                "locationoptions",
-                "cities",
-                "testlocations",
-            },
-        ),
-        translations,
-    )
-    vehicle_types = _flatten_items(
-        _named_lists(
-            data,
-            {"vehicletypes", "vehicleoptions", "transmissions", "gearboxes"},
-        ),
-        translations,
-    )
-    occasion_choices = _flatten_items(
-        _named_lists(
-            data,
-            {"occasionchoices", "occasionoptions", "rentalchoices", "rentaloptions"},
-        ),
-        translations,
-    )
-    if not (licences or examination_types or locations or vehicle_types or occasion_choices):
-        raise ApiResponseError("Tjänsten returnerade ingen användbar bokningskatalog")
+    records = tuple(_records(data))
+    indexed: dict[str, tuple[CatalogItem, ...]] = {}
+    for spec in _SPECS:
+        best: dict[int, _Candidate] = {}
+        for raw, path in records:
+            candidate = _candidate(raw, path, spec, translations)
+            if candidate is None:
+                continue
+            current = best.get(candidate.item.id)
+            if current is None or (candidate.score, candidate.item.name.casefold()) > (
+                current.score,
+                current.item.name.casefold(),
+            ):
+                best[candidate.item.id] = candidate
+        indexed[spec.name] = tuple(
+            sorted(
+                (entry.item for entry in best.values()),
+                key=lambda item: (item.name.casefold(), item.id),
+            )
+        )
+    if not any(indexed.values()):
+        raise ApiResponseError("API-svaret innehåller inga indexerbara bokningsalternativ")
     return BookingCatalog(
-        licences,
-        examination_types,
-        locations,
-        vehicle_types,
-        occasion_choices,
+        indexed["licences"],
+        indexed["examinationTypes"],
+        indexed["locations"],
+        indexed["vehicleTypes"],
+        indexed["occasionChoices"],
     )
 
 
 def parse_translations(response: dict[str, Any]) -> dict[str, str]:
     data = response.get("data")
-    resources = data.get("resources") if isinstance(data, dict) else None
-    if not isinstance(resources, list):
-        raise ApiResponseError("Språksvaret saknar resources")
     result: dict[str, str] = {}
-    for resource in resources:
-        if not isinstance(resource, dict):
-            continue
-        key = resource.get("key")
-        value = resource.get("value")
-        if isinstance(key, str) and isinstance(value, str) and key and value:
-            result[key] = value
+
+    def collect(value: Any, *, resource_context: bool = False) -> None:
+        if isinstance(value, dict):
+            key = value.get("key") or value.get("resourceKey")
+            text = value.get("value") or value.get("text") or value.get("translation")
+            if isinstance(key, str) and isinstance(text, str) and key and text:
+                result[key] = text
+            if resource_context:
+                for child_key, child in value.items():
+                    if (
+                        isinstance(child_key, str)
+                        and isinstance(child, str)
+                        and child_key
+                        and child
+                    ):
+                        result.setdefault(child_key, child)
+            for child_key, child in value.items():
+                collect(
+                    child,
+                    resource_context=resource_context
+                    or _normalized(child_key) in {"resources", "translations", "languageitems"},
+                )
+        elif isinstance(value, list):
+            for child in value:
+                collect(child, resource_context=resource_context)
+
+    collect(data)
     if not result:
         raise ApiResponseError("Språksvaret innehåller inga översättningar")
     return result
