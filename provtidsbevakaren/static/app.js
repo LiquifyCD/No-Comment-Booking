@@ -450,7 +450,6 @@ async function recoverEventStream() {
   }
 }
 function connectEventStream() {
-  if (!state.csrf) return;
   if (!("EventSource" in window)) {
     pollNow();
     return;
@@ -522,8 +521,8 @@ async function bootstrap() {
       addEvent(event);
     }
     showApp();
-    if (data.isAdmin) await loadUsers();
     connectEventStream();
+    if (data.isAdmin) await loadUsers();
   } catch (error) {
     if (error.status === 401) {
       if (health.mode === "server") showLogin();
@@ -662,6 +661,7 @@ $("#bankidButton").addEventListener("click", async () => {
       return;
     }
     await api("/api/bankid/start", { method: "POST", body: "{}" });
+    if (!state.eventSource) connectEventStream();
     $("#bankidStatus").textContent = "Förbereder säker inloggning…";
     if (!$("#bankidDialog").open) $("#bankidDialog").showModal();
   } catch (error) {
@@ -684,6 +684,7 @@ $("#bankidFallback").addEventListener("click", async () => {
 $("#bankidRetry").addEventListener("click", async () => {
   try {
     await api("/api/bankid/retry", { method: "POST", body: "{}" });
+    if (!state.eventSource) connectEventStream();
     $("#bankidStatus").textContent = "Förbereder ett nytt inloggningsförsök…";
     $("#bankidRetry").hidden = true;
     $("#bankidFallback").hidden = true;
