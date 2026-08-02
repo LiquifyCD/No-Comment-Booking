@@ -21,6 +21,29 @@ from provtidsbevakaren.storage import VolatileStateStore
 
 
 class BankIdFlowTests(unittest.TestCase):
+    def test_personal_number_is_captured_only_from_allowlisted_identity_fields(self):
+        self.assertEqual(
+            "20000101-1234",
+            BankIdFlow._extract_personal_number(
+                {"data": {"user": {"personalIdentityNumber": "200001011234"}}}
+            ),
+        )
+        self.assertEqual(
+            "",
+            BankIdFlow._extract_personal_number(
+                {"data": {"referenceId": "200001011234", "message": "20000101-1234"}}
+            ),
+        )
+
+    def test_authenticated_identity_stays_server_side(self):
+        client = Mock(spec=engine.TrafikverketClient)
+        flow = BankIdFlow(client)
+        flow._capture_identity({"data": {"personnummer": "200001011234"}})
+        self.assertEqual("", flow.personal_number())
+        flow._state = "complete"
+        self.assertEqual("20000101-1234", flow.personal_number())
+        self.assertNotIn("20000101", repr(flow.snapshot()))
+
     def test_rotating_qr_completes_without_exposing_challenge_secrets(self):
         client = Mock(spec=engine.TrafikverketClient)
         client.begin_authentication.return_value = {
@@ -194,6 +217,30 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(
                 ["Alingsås", "Örebro"], [item["name"] for item in selected["locations"]]
             )
+            job.close()
+
+    def test_runtime_uses_bankid_identity_without_name_or_personnummer_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = VolatileStateStore()
+            job = MonitorJob("test", load_settings({}), store, Path(directory))
+            job._bankid._state = "complete"
+            job._bankid._personal_number = "20000101-1234"
+            job._catalog = BookingCatalog(
+                (CatalogItem(23, "B"),),
+                (CatalogItem(52, "Körprov"),),
+                (CatalogItem(1, "Alingsås"),),
+            )
+            with patch("threading.Thread.start"):
+                job.start(
+                    {
+                        "licence_id": 23,
+                        "examination_type_id": 52,
+                        "location_id": 1,
+                    }
+                )
+            saved = store.load_config("test")
+            self.assertEqual("Min provtidsbevakning", saved["name"])
+            self.assertEqual("20000101-1234", saved["ssn"])
             job.close()
 
     def test_runtime_rejects_a_stale_or_mismatched_catalog_selection(self):

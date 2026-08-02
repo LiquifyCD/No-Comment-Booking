@@ -334,6 +334,26 @@ label small {
   font-weight: 400;
   color: var(--muted);
 }
+.identity-fallback {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(184, 77, 92, 0.3);
+  border-radius: 14px;
+  background: rgba(184, 77, 92, 0.06);
+}
+.identity-fallback p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.identity-fallback label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 320px;
+  font-size: 13px;
+  font-weight: 650;
+}
 input,
 select {
   width: 100%;

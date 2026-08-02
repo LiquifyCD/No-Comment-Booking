@@ -211,6 +211,7 @@ class TrafikverketClient:
 
     def __init__(self, session: requests.Session | None = None):
         self.session = session or requests.Session()
+        self._identity_observer: Callable[[Any], None] | None = None
         self.session.headers.update(COMMON_HEADERS)
         retries = Retry(
             total=3,
@@ -267,6 +268,11 @@ class TrafikverketClient:
             raise ApiResponseError(f"{path} returnerade ogiltig JSON") from exc
         if not isinstance(data, dict):
             raise ApiResponseError(f"{path} returnerade oväntat dataformat")
+        if self._identity_observer is not None:
+            try:
+                self._identity_observer(data)
+            except Exception:
+                pass
         api_status = data.get("status")
         api_data = data.get("data")
         api_success = api_data.get("success") if isinstance(api_data, dict) else None
@@ -305,7 +311,7 @@ class TrafikverketClient:
     def is_authorized(self) -> dict[str, Any]:
         return self.post("is-authorizied")
 
-    def ensure_authorized(self) -> None:
+    def ensure_authorized(self) -> Any:
         data = nested(self.is_authorized(), "data")
         authorized = (
             data
@@ -316,6 +322,10 @@ class TrafikverketClient:
         )
         if authorized is not True:
             raise AuthenticationRequiredError("BankID-inloggningen bekräftades inte av tjänsten.")
+        return data
+
+    def set_identity_observer(self, observer: Callable[[Any], None] | None) -> None:
+        self._identity_observer = observer
 
     def search_information(self, booking_session: dict[str, Any]) -> dict[str, Any]:
         return self.post("search-information", {"bookingSession": booking_session})

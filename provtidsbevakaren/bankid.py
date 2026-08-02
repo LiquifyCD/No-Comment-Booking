@@ -30,6 +30,8 @@ class BankIdFlow:
         self._qr_start_time = ""
         self._qr_start_secret = ""
         self._autostart_token = ""
+        self._personal_number = ""
+        self.client.set_identity_observer(self._capture_identity)
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -59,6 +61,44 @@ class BankIdFlow:
             raise engine.ApiResponseError("BankID-svaret saknar ett giltigt data-objekt")
         return data
 
+    @staticmethod
+    def _extract_personal_number(value: Any) -> str:
+        if isinstance(value, dict):
+            for key, nested_value in value.items():
+                normalized_key = str(key).replace("_", "").replace("-", "").casefold()
+                if normalized_key in {
+                    "personalnumber",
+                    "personalidentitynumber",
+                    "socialsecuritynumber",
+                    "nationalidentitynumber",
+                    "personnummer",
+                    "ssn",
+                }:
+                    digits = str(nested_value).strip().replace("-", "")
+                    if digits.isdigit() and len(digits) == 12:
+                        return f"{digits[:8]}-{digits[8:]}"
+            for nested_value in value.values():
+                candidate = BankIdFlow._extract_personal_number(nested_value)
+                if candidate:
+                    return candidate
+        elif isinstance(value, list):
+            for nested_value in value:
+                candidate = BankIdFlow._extract_personal_number(nested_value)
+                if candidate:
+                    return candidate
+        return ""
+
+    def personal_number(self) -> str:
+        """Return the authenticated identity only to in-process server code."""
+        with self._lock:
+            return self._personal_number if self._state == "complete" else ""
+
+    def _capture_identity(self, value: Any) -> None:
+        personal_number = self._extract_personal_number(value)
+        if personal_number:
+            with self._lock:
+                self._personal_number = personal_number
+
     def authenticate(
         self,
         *,
@@ -76,6 +116,7 @@ class BankIdFlow:
             self._state = "starting"
             self._status = "Starting"
             self._error = ""
+            self._personal_number = ""
             self._qr_code = ""
             self._qr_version += 1
             self._expires_at = time.time() + timeout_seconds
@@ -128,10 +169,15 @@ class BankIdFlow:
                     self._status = collection_status or self._status
                 if collection_status.casefold() == "completed":
                     if validator is not None:
-                        validator()
+                        authorization_data = validator()
                     else:
-                        self.client.ensure_authorized()
+                        authorization_data = self.client.ensure_authorized()
                     with self._lock:
+                        self._personal_number = (
+                            self._extract_personal_number(status_data)
+                            or self._extract_personal_number(authorization_data)
+                            or self._personal_number
+                        )
                         self._state = "complete"
                         self._status = str(status_data.get("loginStatus") or "Complete")
                         self._clear_challenge(keep_qr=True)
@@ -157,6 +203,7 @@ class BankIdFlow:
             self._state = "idle"
             self._status = ""
             self._error = message
+            self._personal_number = ""
             self._clear_challenge()
 
     def mark_authenticated(self) -> None:

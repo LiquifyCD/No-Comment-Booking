@@ -147,13 +147,31 @@ function applyCatalog(data) {
 }
 async function refreshCatalog(licenceId = 0) {
   const ssn = form.elements.ssn.value.trim();
-  if (!/^\d{8}-?\d{4}$/.test(ssn)) throw new Error("Enter a valid identity number first");
   const data = await api("/api/catalog/refresh", {
     method: "POST",
     body: JSON.stringify({ ssn, licence_id: Number(licenceId) || 0 }),
   });
   applyCatalog(data);
-  toast(`${data.locations.length} provorter indexerade`);
+  if (data.locations.length) toast(`${data.locations.length} provorter hämtade`);
+  return data;
+}
+function showIdentityFallback(error) {
+  const message = String(error?.message || error || "");
+  if (message.toLocaleLowerCase("sv-SE").includes("personnum")) {
+    $("#identityFallback").hidden = false;
+  }
+}
+async function initializeCatalog() {
+  const licenceCatalog = await refreshCatalog(0);
+  const licenceIds = new Set((licenceCatalog.licences || []).map((item) => String(item.id)));
+  let selected = String(
+    form.elements.licence_id.value || state.savedConfig?.licence_id || "",
+  );
+  if (!licenceIds.has(selected)) selected = String(licenceCatalog.licences?.[0]?.id || "");
+  if (selected) {
+    form.elements.licence_id.value = selected;
+    await refreshCatalog(Number(selected));
+  }
 }
 function collectConfig() {
   const mode = form.elements.booking_mode.value;
@@ -309,10 +327,10 @@ function updateBankId(bankId) {
     $("#bankidCountdown").textContent = remaining ? `Löper ut om ${remaining} sekunder` : "";
   } else if (bankId.state === "complete") {
     if (dialog.open) dialog.close();
-    const canLoadCatalog = /^\d{8}-?\d{4}$/.test(form.elements.ssn.value.trim());
-    if (!state.catalog.locations.length && !state.catalogAttempted && canLoadCatalog) {
+    if (!state.catalog.locations.length && !state.catalogAttempted) {
       state.catalogAttempted = true;
-      refreshCatalog(Number(form.elements.licence_id.value) || 0).catch((error) => {
+      initializeCatalog().catch((error) => {
+        showIdentityFallback(error);
         toast(error.message);
         $("#bankidSummary").textContent = "Anslutet — alternativen kunde inte hämtas";
       });
@@ -727,9 +745,10 @@ $("#discordButton").addEventListener("click", async () => {
 $("#bankidButton").addEventListener("click", async () => {
   try {
     if (state.authenticated) {
-      await refreshCatalog(Number(form.elements.licence_id.value) || 0);
+      await initializeCatalog();
       return;
     }
+    state.catalogAttempted = false;
     await api("/api/bankid/start", { method: "POST", body: "{}" });
     if (!state.eventSource) connectEventStream();
     $("#bankidStatus").textContent = "Förbereder säker inloggning…";
@@ -753,6 +772,7 @@ $("#bankidFallback").addEventListener("click", async () => {
 });
 $("#bankidRetry").addEventListener("click", async () => {
   try {
+    state.catalogAttempted = false;
     await api("/api/bankid/retry", { method: "POST", body: "{}" });
     if (!state.eventSource) connectEventStream();
     $("#bankidStatus").textContent = "Förbereder ett nytt inloggningsförsök…";
@@ -766,6 +786,15 @@ form.elements.licence_id.addEventListener("change", async (event) => {
   if (!state.authenticated || !event.target.value) return;
   try {
     await refreshCatalog(Number(event.target.value));
+  } catch (error) {
+    toast(error.message);
+  }
+});
+form.elements.ssn.addEventListener("change", async (event) => {
+  if (!state.authenticated || !/^\d{8}-?\d{4}$/.test(event.target.value.trim())) return;
+  try {
+    await initializeCatalog();
+    $("#identityFallback").hidden = true;
   } catch (error) {
     toast(error.message);
   }

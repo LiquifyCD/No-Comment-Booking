@@ -96,7 +96,16 @@ class MonitorJob:
         }
 
     def start(self, raw_config: dict[str, Any]) -> None:
-        config = engine.Config.from_dict(raw_config)
+        resolved_config = dict(raw_config)
+        resolved_config["name"] = str(resolved_config.get("name") or "Min provtidsbevakning")
+        resolved_config["ssn"] = str(
+            resolved_config.get("ssn") or self._bankid.personal_number()
+        )
+        if not re.fullmatch(r"\d{8}-?\d{4}", resolved_config["ssn"]):
+            raise engine.BotError(
+                "Personnumret kunde inte hämtas från BankID. Använd reservfältet och försök igen."
+            )
+        config = engine.Config.from_dict(resolved_config)
         with self._lock:
             if (self._thread and self._thread.is_alive()) or self._pending_booking:
                 raise RuntimeConflict("En bevakning körs redan för användaren")
@@ -106,7 +115,7 @@ class MonitorJob:
             self._stop_event = threading.Event()
             self._pending_done = threading.Event()
             self._state = "starting"
-            raw_date = raw_config.get("date_from")
+            raw_date = resolved_config.get("date_from")
             if raw_date and raw_date != config.date_from:
                 self.events.add(
                     "warning",
@@ -218,6 +227,7 @@ class MonitorJob:
             with self._lock:
                 self._state = "authenticated"
             self.events.add("authenticated", "BankID-inloggningen är klar.")
+            self._initialize_catalog_after_authentication()
         except engine.BotError as exc:
             if self._cancel_authentication.is_set():
                 with self._lock:
@@ -252,6 +262,26 @@ class MonitorJob:
 
     def bankid_uri(self) -> str:
         return self._bankid.bankid_uri()
+
+    def bankid_personal_number(self) -> str:
+        return self._bankid.personal_number()
+
+    def _catalog_ssn(self, ssn: str) -> str:
+        candidate = ssn.strip() or self._bankid.personal_number()
+        if not re.fullmatch(r"\d{8}-?\d{4}", candidate):
+            raise engine.BotError(
+                "Personnumret kunde inte hämtas från BankID. Använd reservfältet för att hämta alternativen."
+            )
+        return candidate
+
+    def _initialize_catalog_after_authentication(self) -> None:
+        try:
+            self.refresh_catalog("", 0)
+            self.events.add("catalog", "Tillgängliga behörigheter har hämtats automatiskt.")
+        except (engine.BotError, RuntimeConflict) as exc:
+            self.events.add(
+                "warning", f"Bokningsalternativen kunde inte hämtas automatiskt: {exc}"
+            )
 
     @staticmethod
     def _booking_session(ssn: str, licence_id: int) -> dict[str, Any]:
@@ -289,7 +319,9 @@ class MonitorJob:
                 response = (
                     self._client.licence_information()
                     if licence_id == 0
-                    else self._client.search_information(self._booking_session(ssn, licence_id))
+                    else self._client.search_information(
+                        self._booking_session(self._catalog_ssn(ssn), licence_id)
+                    )
                 )
             except engine.AuthenticationRequiredError:
                 self._bankid.invalidate()

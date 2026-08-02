@@ -122,6 +122,14 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(bot.DEFAULT_TIMEOUT, self.client.session.post.call_args.kwargs["timeout"])
         self.assertEqual(1, len(self.client.session.cookies))
 
+    def test_identity_observer_receives_api_json_and_authorization_data_is_returned(self):
+        observer = Mock()
+        self.client.set_identity_observer(observer)
+        payload = {"data": {"isAuthorized": True, "personnummer": "200001011234"}}
+        self.client.session.post.return_value = self.response(payload=payload)
+        self.assertEqual(payload["data"], self.client.ensure_authorized())
+        observer.assert_called_once_with(payload)
+
     def test_close_erases_in_memory_cookies(self):
         self.client.session.cookies.set("temporary", "value")
         self.client.close()

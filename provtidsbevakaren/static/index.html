@@ -170,15 +170,15 @@
                 <p class="eyebrow">Inställningar</p>
                 <h2>Vad ska bevakas?</h2>
               </div>
-              <p>Obligatoriska fält är markerade med *</p>
+              <p>BankID hämtar dina personliga bokningsalternativ.</p>
             </div>
 
             <article class="panel">
               <div class="panel-heading">
                 <span class="step-number">1</span>
                 <div>
-                  <h3>Person och prov</h3>
-                  <p>Grunduppgifter som behövs för sökningen.</p>
+                  <h3>BankID och prov</h3>
+                  <p>Din identitet, dina behörigheter och provorter hämtas automatiskt.</p>
                 </div>
               </div>
               <div class="auth-actions">
@@ -187,22 +187,19 @@
                 </button>
                 <span id="bankidSummary" class="muted">Inte anslutet</span>
               </div>
-              <div class="form-grid">
-                <label
-                  >Bevakningens namn *<input
-                    name="name"
-                    value="Alfred"
-                    maxlength="80"
-                    required
-                /></label>
-                <label
-                  >Personnummer *<input
+              <input name="name" type="hidden" value="" />
+              <div id="identityFallback" class="identity-fallback" hidden>
+                <p>Trafikverket lämnade inte personnumret efter BankID. Ange det endast som reserv.</p>
+                <label>Personnummer
+                  <input
                     name="ssn"
                     inputmode="numeric"
                     autocomplete="off"
                     pattern="[0-9]{8}-?[0-9]{4}"
-                    required
-                /></label>
+                  />
+                </label>
+              </div>
+              <div class="form-grid">
                 <label>Behörighet *
                   <select name="licence_id" required disabled>
                     <option value="">Anslut BankID för att hämta alternativ</option>

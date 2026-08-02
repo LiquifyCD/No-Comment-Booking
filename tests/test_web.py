@@ -83,6 +83,37 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn("/api/live/stream", self.app.openapi()["paths"])
         self.assertNotIn("/api/events/stream", self.app.openapi()["paths"])
 
+    def test_frontend_uses_neutral_live_stream_and_hides_identity_fallback(self):
+        script = self.client.get("/static/app.js").text
+        page = self.client.get("/static/index.html").text
+        self.assertIn("/api/live?after=", script)
+        self.assertIn("new EventSource(`/api/live/stream?after=", script)
+        self.assertNotIn("/api/events", script)
+        self.assertIn('id="identityFallback" class="identity-fallback" hidden', page)
+        self.assertNotIn('id="name"', page)
+
+    def test_bootstrap_never_returns_saved_name_or_personnummer(self):
+        self.login()
+        self.app.state.store.save_config(
+            "local", {**VALID_CONFIG, "name": "Private", "ssn": "20000101-1234"}
+        )
+        config = self.client.get("/api/bootstrap").json()["config"]
+        self.assertNotIn("name", config)
+        self.assertNotIn("ssn", config)
+        self.assertNotIn("20000101", repr(config))
+
+    def test_monitor_start_accepts_empty_identity_fields(self):
+        bootstrap = self.login()
+        payload = {**VALID_CONFIG, "name": "", "ssn": ""}
+        with patch("provtidsbevakaren.runtime.MonitorJob.start") as start:
+            response = self.client.post(
+                "/api/monitor/start",
+                json=payload,
+                headers={"X-CSRF-Token": bootstrap["csrfToken"]},
+            )
+        self.assertEqual(200, response.status_code)
+        start.assert_called_once()
+
     def test_bankid_and_catalog_endpoints_keep_sensitive_input_in_request_body(self):
         bootstrap = self.login()
         headers = {"X-CSRF-Token": bootstrap["csrfToken"]}

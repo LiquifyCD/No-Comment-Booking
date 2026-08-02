@@ -41,8 +41,8 @@ class RegisterPayload(BaseModel):
 
 
 class MonitorConfigPayload(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
-    ssn: str = Field(min_length=12, max_length=13)
+    name: str = Field(default="", max_length=80)
+    ssn: str = Field(default="", max_length=13)
     licence_id: int = Field(gt=0)
     examination_type_id: int = Field(gt=0)
     location_id: int = Field(gt=0)
@@ -69,7 +69,7 @@ class DiscordPayload(BaseModel):
 
 
 class CatalogPayload(BaseModel):
-    ssn: str = Field(min_length=12, max_length=13)
+    ssn: str = Field(default="", max_length=13)
     licence_id: int = Field(default=0, ge=0)
 
 
@@ -231,6 +231,12 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
     async def bootstrap(session: UserSession = Depends(current_session)) -> dict[str, Any]:
         job = registry.for_user(session.user_id)
         account = auth.account(session.user_id)
+        saved_config = store.load_config(session.user_id)
+        public_config = (
+            {key: value for key, value in saved_config.items() if key not in {"name", "ssn"}}
+            if saved_config
+            else None
+        )
         return {
             "mode": settings.mode,
             "version": __version__,
@@ -239,7 +245,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
             "csrfToken": session.csrf_token,
             "browserFallbackAvailable": not settings.is_server
             or settings.has_remote_browser,
-            "config": store.load_config(session.user_id),
+            "config": public_config,
             **job.snapshot(),
         }
 
