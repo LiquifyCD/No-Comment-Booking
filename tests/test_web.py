@@ -71,10 +71,14 @@ class LocalWebTests(unittest.TestCase):
             )
         self.assertEqual(200, response.status_code)
         start.assert_called_once()
+        submitted = start.call_args.args[0]
+        self.assertEqual(15, submitted["poll_interval_seconds"])
+        self.assertFalse(submitted["auto_reserve"])
+        self.assertFalse(submitted["auto_book"])
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.4.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.5.0"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -83,18 +87,26 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn("/api/live/stream", self.app.openapi()["paths"])
         self.assertNotIn("/api/events/stream", self.app.openapi()["paths"])
 
-    def test_frontend_uses_neutral_live_stream_and_hides_identity_fallback(self):
+    def test_frontend_has_wizard_without_identity_reservation_sidebar_or_logo(self):
         transport = self.client.get("/static/live-transport.js").text
         page = self.client.get("/static/index.html").text
-        self.assertIn("/api/live?after=", transport)
-        self.assertIn("/api/live/stream?after=", transport)
+        script = self.client.get("/static/app.js").text
+        self.assertIn('streamUrl: state.isAdmin ? "/api/live/stream" : "/api/status/stream"', script)
+        self.assertIn('const base = this.options.snapshotUrl || "/api/live"', transport)
         self.assertNotIn("/api/events", transport)
         self.assertLess(page.index("live-transport.js"), page.index("app.js"))
-        self.assertIn('id="identityFallback" class="identity-fallback" hidden', page)
-        self.assertIn('id="manualFallback" class="panel advanced" hidden', page)
+        self.assertNotIn('class="sidebar"', page)
+        self.assertNotIn('class="brand-mark"', page)
+        self.assertNotIn('>NC<', page)
+        self.assertNotIn('name="poll_interval_seconds"', page)
+        self.assertNotIn("Reservera", page)
+        self.assertNotIn("/api/reservation/book", script)
+        self.assertIn('data-step="bankid"', page)
+        self.assertIn('data-step="locations"', page)
+        self.assertIn('id="adminTopNav"', page)
         self.assertIn('name="vehicle_type_id" required disabled', page)
         self.assertIn('name="occasion_choice_id" required disabled', page)
-        self.assertNotIn('id="name"', page)
+        self.assertIn('name="name" type="hidden"', page)
 
     def test_frontend_has_public_home_email_auth_and_password_reset_views(self):
         page = self.client.get("/static/index.html").text
@@ -107,15 +119,23 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn("/api/auth/reset-password", script)
         self.assertIn("/api/admin/users", script)
 
-    def test_bootstrap_never_returns_saved_name_or_personnummer(self):
+    def test_bootstrap_never_returns_saved_identity_or_discord_secret(self):
         self.login()
         self.app.state.store.save_config(
-            "local", {**VALID_CONFIG, "name": "Private", "ssn": "20000101-1234"}
+            "local",
+            {
+                **VALID_CONFIG,
+                "name": "Private",
+                "ssn": "20000101-1234",
+                "discord_webhook_url": "https://discord.com/api/webhooks/123/secret",
+            },
         )
         config = self.client.get("/api/bootstrap").json()["config"]
         self.assertNotIn("name", config)
         self.assertNotIn("ssn", config)
         self.assertNotIn("20000101", repr(config))
+        self.assertNotIn("discord_webhook_url", config)
+        self.assertNotIn("secret", repr(config))
 
     def test_monitor_start_accepts_empty_identity_fields(self):
         bootstrap = self.login()
@@ -128,6 +148,14 @@ class LocalWebTests(unittest.TestCase):
             )
         self.assertEqual(200, response.status_code)
         start.assert_called_once()
+
+    def test_monitor_rejects_more_than_four_or_duplicate_locations(self):
+        bootstrap = self.login()
+        headers = {"X-CSRF-Token": bootstrap["csrfToken"]}
+        too_many = {**VALID_CONFIG, "nearby_location_ids": [11, 12, 13, 14]}
+        self.assertEqual(422, self.client.post("/api/monitor/start", json=too_many, headers=headers).status_code)
+        duplicate = {**VALID_CONFIG, "nearby_location_ids": [10]}
+        self.assertEqual(422, self.client.post("/api/monitor/start", json=duplicate, headers=headers).status_code)
 
     def test_bankid_and_catalog_endpoints_keep_sensitive_input_in_request_body(self):
         bootstrap = self.login()
@@ -257,7 +285,35 @@ class ServerWebTests(unittest.TestCase):
         self.assertNotEqual(alice["user"], bob["user"])
         self.assertEqual(self.admin_email, alice["account"]["email"])
         self.assertEqual(self.user_email, bob["account"]["email"])
-        self.assertFalse(any(event["message"] == "alice-only" for event in bob["events"]))
+        self.assertNotIn("events", bob)
+        self.assertEqual(403, self.client.get("/api/live").status_code)
+        self.assertEqual(200, self.client.get("/api/status").status_code)
+
+    def test_discord_permission_and_global_default_are_server_enforced(self):
+        self.client.cookies.clear()
+        self.assertEqual(204, self.login(self.user_email, "bob-password").status_code)
+        user = self.client.get("/api/bootstrap").json()
+        headers = {"X-CSRF-Token": user["csrfToken"]}
+        payload = {**VALID_CONFIG, "discord_webhook_url": "https://discord.com/api/webhooks/123/abc"}
+        self.assertEqual(403, self.client.post("/api/monitor/start", json=payload, headers=headers).status_code)
+
+        admin, admin_headers = self.admin_session()
+        users = self.client.get("/api/admin/users?q=bob").json()["users"]
+        account_id = users[0]["id"]
+        allowed = self.client.patch(
+            f"/api/admin/users/{account_id}", json={"discord_allowed": True}, headers=admin_headers
+        )
+        self.assertTrue(allowed.json()["discordAllowed"])
+        policy = self.client.put(
+            "/api/admin/discord-policy",
+            json={"enabled_for_new_users": True, "apply_to_existing_users": False},
+            headers=admin_headers,
+        )
+        self.assertEqual({"enabledForNewUsers": True}, policy.json())
+        created = self.client.post(
+            "/api/admin/users", json={"email": "discord@example.com"}, headers=admin_headers
+        )
+        self.assertTrue(created.json()["account"]["discordAllowed"])
 
     def test_server_cannot_exit_process_through_api(self):
         self.login()

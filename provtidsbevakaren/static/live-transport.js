@@ -172,11 +172,13 @@
     }
 
     _streamUrl() {
-      return `/api/live/stream?after=${this.options.getCursor()}`;
+      const base = this.options.streamUrl || "/api/live/stream";
+      return `${base}?after=${this.options.getCursor()}`;
     }
 
     _snapshotUrl() {
-      return `/api/live?after=${this.options.getCursor()}`;
+      const base = this.options.snapshotUrl || "/api/live";
+      return `${base}?after=${this.options.getCursor()}`;
     }
   }
 

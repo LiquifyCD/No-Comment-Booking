@@ -1,6 +1,6 @@
 # No-Comment-Booking
 
-No-Comment-Booking is a local-first service for monitoring driving-test appointments. It can notify, reserve, or complete a reservation using **Pay later/invoice**. The default Windows application opens a responsive web dashboard and does not require a console window.
+No-Comment-Booking is a local-first service for monitoring driving-test appointments. It notifies the user about matching times but never reserves or books them. The default Windows application opens a responsive web dashboard and does not require a console window.
 
 An opt-in server runtime is included for later deployment. It remains disabled until HTTPS, authentication, encryption, and isolated browser infrastructure are configured.
 
@@ -9,8 +9,8 @@ An opt-in server runtime is included for later deployment. It remains disabled u
 1. Download or build `No-Comment-Booking.exe`.
 2. Double-click it. The application binds only to `127.0.0.1` and opens the dashboard.
 3. Select **Connect Mobile BankID** and scan the rotating QR code, or open BankID on the same device.
-4. Your identity, available licences, examination types, and searchable test locations are loaded automatically from Trafikverket's API. Personnummer is requested manually only if the API does not return it after successful BankID authentication.
-5. Select the examination type and test location you want to monitor.
+4. Your identity, available licences, examination types, and searchable test locations are loaded automatically from Trafikverket's API. Name and personnummer are never requested in the interface.
+5. Select the examination type and up to four test locations to monitor.
 6. Start monitoring.
 
 The start-date minimum is always the user's current local date and is revalidated by the backend. Trafikverket cookies and BankID challenge data exist only in process memory and are cleared when the program closes. The separate browser flow is retained only as an explicit fallback if integrated authentication fails.
@@ -42,8 +42,10 @@ The executable is written to `dist\No-Comment-Booking.exe`.
 - After login, `licence-information` supplies readable licence choices.
 - Selecting a licence loads its examination types, vehicle/rental choices, and all available locations from `search-information`.
 - Locations are deduplicated, alphabetically sorted, and searchable.
-- A found slot can trigger notification, automatic reservation, or automatic Pay later booking.
-- A reserved slot remains available in the dashboard for a guarded, single-click Pay later completion attempt.
+- A found slot can trigger a safe user-controlled notification. Booking remains a manual action at Trafikverket.
+- The polling interval is fixed to 15 seconds and enforced by the backend.
+- Detailed real-time events are admin-only. Regular accounts receive a minimal status stream.
+- Discord is admin-controlled per account, with an optional default for future users.
 
 ## Operating modes
 
@@ -79,12 +81,11 @@ Never commit the environment file. See [architecture](docs/ARCHITECTURE.md) and 
 
 ## Reliability and safety
 
-- Reservation and invoice mutations are never retried automatically.
-- Server state is read back before a reservation is treated as successful.
-- Duplicate BankID, catalog, monitoring, and booking actions are guarded.
+- The public API contains no reservation or booking mutation.
+- Duplicate BankID, catalog, and monitoring actions are guarded.
 - Failed catalog refreshes leave the last valid in-memory catalog intact.
 - Missing fields and expired authentication produce explicit UI errors.
-- Live status uses one same-origin SSE connection, reconnects automatically, and falls back to a bounded snapshot request only while recovering.
+- Live status uses one same-origin SSE connection, reconnects automatically, and falls back to a bounded snapshot request only while recovering. Event buffers retain at most 100 entries per active runtime.
 - Logs and public API state exclude identity numbers, cookies, webhook URLs, and BankID challenge secrets.
 
 No-Comment-Booking is not an official Trafikverket service.

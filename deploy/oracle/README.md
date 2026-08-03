@@ -34,7 +34,7 @@ After reboot, repeat both health checks and inspect `systemctl is-active no-comm
 
 ## Redeploy
 
-Before the first 2.4.0 restart of an existing username-based installation, add a
+Before the first 2.4.0 or later restart of an existing username-based installation, add a
 complete mapping to `/etc/no-comment-booking.env`, for example:
 
 ```bash
@@ -58,6 +58,8 @@ done
 curl -fsS http://127.0.0.1:8080/api/health
 sudo no-comment-booking-smoke-test https://<public-ip> --insecure
 ```
+
+Version 2.5.0 adds an automatic SQLite migration for Discord permissions and a global default. It is additive and keeps existing accounts denied by default. Configure it from the administrator user view; webhook values remain encrypted in the state store and are never returned by bootstrap.
 
 ## Operations
 

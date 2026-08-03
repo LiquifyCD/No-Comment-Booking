@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from . import __version__, engine
 from .accounts import (
@@ -56,6 +56,12 @@ class AdminUpdateAccountPayload(BaseModel):
     role: str | None = Field(default=None, pattern="^(admin|user)$")
     status: str | None = Field(default=None, pattern="^(pending|active|disabled)$")
     paid: bool | None = None
+    discord_allowed: bool | None = None
+
+
+class DiscordPolicyPayload(BaseModel):
+    enabled_for_new_users: bool
+    apply_to_existing_users: bool = False
 
 
 class MonitorConfigPayload(BaseModel):
@@ -64,7 +70,7 @@ class MonitorConfigPayload(BaseModel):
     licence_id: int = Field(gt=0)
     examination_type_id: int = Field(gt=0)
     location_id: int = Field(gt=0)
-    nearby_location_ids: list[int] = Field(default_factory=list)
+    nearby_location_ids: list[int] = Field(default_factory=list, max_length=3)
     vehicle_type_id: int = Field(default=1, gt=0)
     tachograph_type_id: int = Field(default=1, gt=0)
     occasion_choice_id: int = Field(default=1, gt=0)
@@ -74,11 +80,15 @@ class MonitorConfigPayload(BaseModel):
     earliest_time: str | None = None
     latest_time: str | None = None
     allowed_weekdays: list[int] | None = None
-    poll_interval_seconds: float = Field(default=60, ge=10)
     discord_webhook_url: str = ""
-    auto_reserve: bool = False
-    auto_book: bool = False
     timezone: str = Field(default="Europe/Stockholm", min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def validate_locations(self) -> MonitorConfigPayload:
+        selected = [self.location_id, *self.nearby_location_ids]
+        if len(selected) != len(set(selected)):
+            raise ValueError("Varje provort får bara väljas en gång.")
+        return self
 
 
 class DiscordPayload(BaseModel):
@@ -267,20 +277,31 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         account = auth.account(session.user_id)
         saved_config = store.load_config(session.user_id)
         public_config = (
-            {key: value for key, value in saved_config.items() if key not in {"name", "ssn"}}
+            {
+                key: value
+                for key, value in saved_config.items()
+                if key not in {"name", "ssn", "discord_webhook_url"}
+            }
             if saved_config
             else None
         )
+        live_state = job.snapshot() if account and account.is_admin else job.status_snapshot()
         return {
             "mode": settings.mode,
             "version": __version__,
             "user": session.user_id,
             "account": account.public_dict() if account else None,
             "isAdmin": bool(account and account.is_admin),
+            "discordAllowed": bool(account and (account.is_admin or account.discord_allowed)),
+            "discordDefaultForNewUsers": (
+                accounts.discord_default_for_new_users()
+                if accounts and account and account.is_admin
+                else False
+            ),
             "csrfToken": session.csrf_token,
             "browserFallbackAvailable": not settings.is_server or settings.has_remote_browser,
             "config": public_config,
-            **job.snapshot(),
+            **live_state,
         }
 
     @app.get("/api/admin/users")
@@ -379,10 +400,24 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         await asyncio.to_thread(registry.remove_user, account.id, delete_config=True)
         return Response(status_code=204)
 
+    @app.put("/api/admin/discord-policy")
+    async def admin_discord_policy(
+        payload: DiscordPolicyPayload,
+        _session: UserSession = Depends(csrf_admin),
+    ) -> dict[str, bool]:
+        if accounts is None:
+            raise HTTPException(status_code=404, detail="Not available in local mode")
+        await asyncio.to_thread(
+            accounts.set_discord_policy,
+            payload.enabled_for_new_users,
+            apply_existing=payload.apply_to_existing_users,
+        )
+        return {"enabledForNewUsers": accounts.discord_default_for_new_users()}
+
     @app.get("/api/events", include_in_schema=False)
     @app.get("/api/live")
     async def events(
-        after: int = 0, session: UserSession = Depends(current_session)
+        after: int = 0, session: UserSession = Depends(current_admin)
     ) -> dict[str, Any]:
         return registry.for_user(session.user_id).snapshot(max(0, after))
 
@@ -391,7 +426,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
     async def event_stream(
         request: Request,
         after: int = 0,
-        session: UserSession = Depends(current_session),
+        session: UserSession = Depends(current_admin),
     ) -> StreamingResponse:
         job = registry.for_user(session.user_id)
         header_cursor = request.headers.get("Last-Event-ID", "")
@@ -436,6 +471,46 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
                 "Cache-Control": "no-store",
                 "X-Accel-Buffering": "no",
             },
+        )
+
+    @app.get("/api/status")
+    async def monitor_status(
+        session: UserSession = Depends(current_session),
+    ) -> dict[str, Any]:
+        return registry.for_user(session.user_id).status_snapshot()
+
+    @app.get("/api/status/stream")
+    async def monitor_status_stream(
+        request: Request,
+        session: UserSession = Depends(current_session),
+    ) -> StreamingResponse:
+        job = registry.for_user(session.user_id)
+
+        async def snapshots():
+            previous = ""
+            last_send = time.monotonic()
+            while not await request.is_disconnected():
+                account = auth.account(session.user_id) if settings.is_server else None
+                if session.expires_at < time.time() or (
+                    settings.is_server and (not account or not account.is_active)
+                ):
+                    yield 'event: auth\ndata: {"status":401}\n\n'
+                    return
+                snapshot = job.status_snapshot()
+                payload = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+                if payload != previous:
+                    yield f"data: {payload}\n\n"
+                    previous = payload
+                    last_send = time.monotonic()
+                elif time.monotonic() - last_send >= 15:
+                    yield ": keepalive\n\n"
+                    last_send = time.monotonic()
+                await asyncio.sleep(1 if snapshot["state"] == "authentication" else 3)
+
+        return StreamingResponse(
+            snapshots(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
     @app.post("/api/bankid/start")
@@ -510,24 +585,22 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         except engine.BotError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    @app.post("/api/reservation/book")
-    async def book_reservation(session: UserSession = Depends(csrf_session)) -> dict[str, Any]:
-        try:
-            return await asyncio.to_thread(
-                registry.for_user(session.user_id).complete_pending_booking
-            )
-        except RuntimeConflict as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except engine.BotError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-
     @app.post("/api/monitor/start")
     async def start_monitor(
         payload: MonitorConfigPayload,
         session: UserSession = Depends(csrf_session),
     ) -> dict[str, str]:
+        account = auth.account(session.user_id)
+        raw_config = payload.model_dump()
+        raw_config["poll_interval_seconds"] = 15
+        raw_config["auto_reserve"] = False
+        raw_config["auto_book"] = False
+        if raw_config.get("discord_webhook_url") and not (
+            account and (account.is_admin or account.discord_allowed)
+        ):
+            raise HTTPException(status_code=403, detail="Discord-notiser är inte aktiverade för kontot.")
         try:
-            registry.for_user(session.user_id).start(payload.model_dump())
+            registry.for_user(session.user_id).start(raw_config)
         except engine.BotError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RuntimeConflict as exc:
@@ -544,6 +617,11 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         payload: DiscordPayload,
         session: UserSession = Depends(csrf_session),
     ) -> dict[str, bool]:
+        account = auth.account(session.user_id)
+        if settings.is_server and not (
+            account and (account.is_admin or account.discord_allowed)
+        ):
+            raise HTTPException(status_code=403, detail="Discord-notiser är inte aktiverade för kontot.")
         try:
             engine.Config.from_dict(
                 {

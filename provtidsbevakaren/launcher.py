@@ -38,7 +38,9 @@ def run() -> int:
         host=settings.host,
         port=settings.port,
         log_level="info" if settings.is_server else "warning",
-        access_log=settings.is_server,
+        access_log=False,
+        limit_concurrency=64,
+        timeout_keep_alive=5,
     )
     server = uvicorn.Server(config)
     if not settings.is_server:

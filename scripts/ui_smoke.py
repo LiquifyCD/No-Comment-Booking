@@ -39,8 +39,9 @@ def assert_no_errors(driver: webdriver.Edge) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("base_url")
-    parser.add_argument("--email", required=True)
-    parser.add_argument("--password", required=True)
+    parser.add_argument("--email")
+    parser.add_argument("--password")
+    parser.add_argument("--credentials-file", type=Path)
     parser.add_argument("--output", type=Path, default=Path("artifacts"))
     parser.add_argument(
         "--exercise-admin",
@@ -48,6 +49,15 @@ def main() -> None:
         help="Create, edit, and delete a temporary account. Use only against a test instance.",
     )
     args = parser.parse_args()
+    if args.credentials_file:
+        credentials = {}
+        for line in args.credentials_file.read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition(":")
+            credentials[key.strip().casefold()] = value.strip()
+        args.email = credentials.get("email")
+        args.password = credentials.get("password")
+    if not args.email or not args.password:
+        parser.error("provide --email/--password or --credentials-file")
     args.output.mkdir(parents=True, exist_ok=True)
 
     desktop = browser(1440, 1000)
@@ -69,9 +79,9 @@ def main() -> None:
         )
         desktop.find_element(By.CSS_SELECTOR, "#loginForm button[type=submit]").click()
         wait.until(conditions.visibility_of_element_located((By.ID, "appView")))
-        desktop.find_element(By.ID, "adminNav").click()
+        desktop.find_element(By.CSS_SELECTOR, '[data-admin-view="users"]').click()
         wait.until(conditions.visibility_of_element_located((By.ID, "userList")))
-        wait.until(lambda page: page.find_elements(By.CSS_SELECTOR, ".user-card"))
+        wait.until(lambda page: page.find_elements(By.CSS_SELECTOR, ".user-row"))
         users_section = desktop.find_element(By.ID, "users")
         desktop.execute_script(
             "arguments[0].scrollIntoView({behavior:'instant',block:'start'})", users_section
@@ -103,7 +113,7 @@ def main() -> None:
             search.send_keys(email)
             desktop.find_element(By.CSS_SELECTOR, "#userSearchForm button[type=submit]").click()
             card = wait.until(
-                conditions.visibility_of_element_located((By.CSS_SELECTOR, ".user-card"))
+                conditions.visibility_of_element_located((By.CSS_SELECTOR, ".user-row"))
             )
             if email not in card.text:
                 raise AssertionError("Admin search returned the wrong account")
@@ -121,15 +131,15 @@ def main() -> None:
             desktop.find_element(By.CSS_SELECTOR, "#userForm button[type=submit]").click()
             wait.until(conditions.invisibility_of_element_located((By.ID, "userDialog")))
             card = wait.until(
-                conditions.visibility_of_element_located((By.CSS_SELECTOR, ".user-card"))
+                conditions.visibility_of_element_located((By.CSS_SELECTOR, ".user-row"))
             )
-            if "Edited UI User" not in card.text or "Betald" not in card.text:
+            if "Edited UI User" not in card.text or "active" not in card.text:
                 raise AssertionError("Admin edit was not reflected in the user list")
             card.find_element(By.TAG_NAME, "button").click()
             wait.until(conditions.visibility_of_element_located((By.ID, "userDialog")))
             desktop.find_element(By.ID, "deleteUser").click()
             wait.until(conditions.alert_is_present()).accept()
-            wait.until(conditions.invisibility_of_element_located((By.CSS_SELECTOR, ".user-card")))
+            wait.until(conditions.invisibility_of_element_located((By.CSS_SELECTOR, ".user-row")))
         desktop.save_screenshot(str(args.output / "admin-desktop.png"))
         assert_no_errors(desktop)
     finally:

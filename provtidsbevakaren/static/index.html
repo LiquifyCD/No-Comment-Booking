@@ -15,606 +15,66 @@
 
     <main id="homeView" class="public-site">
       <header class="public-header">
-        <a class="public-brand" href="#top" aria-label="No-Comment-Booking startsida">
-          <span class="brand-mark">NC</span>
-          <span><strong>No-Comment-Booking</strong><small>Provtider utan onödigt väntande</small></span>
-        </a>
-        <nav aria-label="Sidnavigation">
-          <a href="#howItWorks">Så fungerar det</a>
-          <a href="#security">Säkerhet</a>
-          <button class="button secondary" type="button" data-open-login>Logga in</button>
-        </nav>
+        <a class="wordmark" href="#top">No-Comment-Booking</a>
+        <nav><a href="#howItWorks">Så fungerar det</a><a href="#security">Säkerhet</a><button class="button secondary" data-open-login>Logga in</button></nav>
       </header>
-      <section id="mainContent" class="public-hero" aria-labelledby="homeTitle">
+      <section id="mainContent" class="public-hero">
         <div class="public-hero-copy">
           <p class="eyebrow">Automatisk provtidsbevakning</p>
           <h1 id="homeTitle">Låt bevakningen hålla utkik. Du väljer när det passar.</h1>
-          <p class="public-lead">
-            No-Comment-Booking bevakar valda provorter och tider, visar status direkt
-            och meddelar när ett relevant tillfälle hittas.
-          </p>
-          <div class="public-actions">
-            <button class="button primary" type="button" data-open-login>Logga in</button>
-            <a class="button ghost" href="#howItWorks">Se hur det fungerar</a>
-          </div>
-          <ul class="trust-list" aria-label="Viktiga egenskaper">
-            <li>BankID när det behövs</li>
-            <li>Live-status utan omladdning</li>
-            <li>Du styr bokningen</li>
-          </ul>
+          <p class="public-lead">Välj upp till fyra provorter och få en notifiering när en passande tid blir tillgänglig.</p>
+          <div class="public-actions"><button class="button primary" data-open-login>Logga in</button><a class="button ghost" href="#howItWorks">Så fungerar det</a></div>
         </div>
-        <div class="public-preview" aria-label="Exempel på bevakningsstatus">
-          <div class="preview-top"><span class="status-pulse"></span><strong>Bevakning aktiv</strong></div>
-          <div class="preview-route"><span>B</span><div><small>Behörighet</small><strong>Personbil</strong></div></div>
-          <div class="preview-route"><span>3</span><div><small>Valda orter</small><strong>Göteborg med omnejd</strong></div></div>
-          <div class="preview-result"><small>Senaste kontroll</small><strong>Uppdaterad nyss</strong></div>
-        </div>
+        <div class="public-preview"><div class="preview-top"><span class="status-pulse"></span><strong>Bevakning aktiv</strong></div><div class="preview-route"><span>B</span><div><small>Behörighet</small><strong>Personbil</strong></div></div><div class="preview-route"><span>4</span><div><small>Valda orter</small><strong>Dina favoriter</strong></div></div><div class="preview-result"><small>Kontrollintervall</small><strong>15 sekunder</strong></div></div>
       </section>
-      <section id="howItWorks" class="public-section" aria-labelledby="stepsTitle">
-        <p class="eyebrow">Enkelt från start</p>
-        <h2 id="stepsTitle">Tre steg till en lugnare bevakning</h2>
-        <div class="public-card-grid">
-          <article><span>01</span><h3>Anslut säkert</h3><p>Logga in och slutför BankID när tjänsten behöver en giltig session.</p></article>
-          <article><span>02</span><h3>Välj vad som passar</h3><p>Behörigheter, provtyper och orter hämtas för din profil.</p></article>
-          <article><span>03</span><h3>Följ status live</h3><p>Starta bevakningen och få tydliga händelser utan att uppdatera sidan.</p></article>
-        </div>
-      </section>
-      <section id="security" class="public-section security-section" aria-labelledby="securityTitle">
-        <div><p class="eyebrow">Byggd för integritet</p><h2 id="securityTitle">Känsliga uppgifter hör inte hemma i gränssnittet.</h2></div>
-        <ul><li>Lösenord lagras endast som starka hashvärden.</li><li>BankID- och personuppgifter visas inte i administratörsvyn.</li><li>Konton kräver aktivering innan de får använda tjänsten.</li></ul>
-      </section>
-      <footer class="public-footer"><span>No-Comment-Booking</span><button class="text-button" type="button" data-open-login>Logga in</button></footer>
+      <section id="howItWorks" class="public-section"><p class="eyebrow">Enkelt från start</p><h2>Tre steg till en lugnare bevakning</h2><div class="public-card-grid"><article><span>01</span><h3>Identifiera dig</h3><p>Logga in säkert med Mobilt BankID.</p></article><article><span>02</span><h3>Välj alternativ</h3><p>Behörigheter, provtyper och orter hämtas automatiskt.</p></article><article><span>03</span><h3>Få notifieringar</h3><p>Bevakningen kontrollerar lediga tider var 15:e sekund.</p></article></div></section>
+      <section id="security" class="public-section security-section"><div><p class="eyebrow">Byggd för integritet</p><h2>Känsliga uppgifter skyddas.</h2></div><ul><li>Lösenord lagras endast som starka hashvärden.</li><li>BankID-uppgifter visas inte för administratörer.</li><li>Konton måste aktiveras innan användning.</li></ul></section>
+      <footer class="public-footer"><span>No-Comment-Booking</span><button class="text-button" data-open-login>Logga in</button></footer>
     </main>
 
-    <main id="loginView" class="auth-shell" hidden>
-      <section class="auth-card" aria-labelledby="authTitle">
-        <button class="back-link" type="button" data-open-home>← Till startsidan</button>
-        <div class="brand-mark" aria-hidden="true">NC</div>
-        <p class="eyebrow">Säker inloggning</p>
-        <h1 id="authTitle">Välkommen tillbaka</h1>
-        <p class="muted">Logga in med e-post för att hantera din bevakning.</p>
-        <form id="loginForm" class="stack">
-          <label>E-postadress<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required /></label>
-          <label
-            >Lösenord<input
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              required
-          /></label>
-          <button class="button primary full" type="submit">Logga in</button>
-        </form>
-        <button id="showRegister" class="button ghost full" type="button">
-          Skapa konto
-        </button>
-        <p id="loginError" class="form-error" role="alert"></p>
-        <form id="registerForm" class="stack" hidden>
-          <label>E-postadress<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required /></label>
-          <label
-            >Lösenord<input
-              name="password"
-              type="password"
-              autocomplete="new-password"
-              minlength="12"
-              required
-          /></label>
-          <label
-            >Upprepa lösenord<input
-              name="password_confirm"
-              type="password"
-              autocomplete="new-password"
-              minlength="12"
-              required
-          /></label>
-          <button class="button primary full" type="submit">Registrera</button>
-          <button id="showLogin" class="button ghost full" type="button">
-            Tillbaka till inloggning
-          </button>
-        </form>
-        <p id="registerMessage" class="form-message" role="status"></p>
-      </section>
-    </main>
+    <main id="loginView" class="auth-shell" hidden><section class="auth-card"><button class="back-link" data-open-home>← Till startsidan</button><p class="eyebrow">Säker inloggning</p><h1>Välkommen tillbaka</h1><form id="loginForm" class="stack"><label>E-postadress<input name="email" type="email" autocomplete="email" required /></label><label>Lösenord<input name="password" type="password" autocomplete="current-password" required /></label><button class="button primary full">Logga in</button></form><button id="showRegister" class="button ghost full">Skapa konto</button><p id="loginError" class="form-error" role="alert"></p><form id="registerForm" class="stack" hidden><label>E-postadress<input name="email" type="email" autocomplete="email" required /></label><label>Lösenord<input name="password" type="password" autocomplete="new-password" minlength="12" required /></label><label>Upprepa lösenord<input name="password_confirm" type="password" autocomplete="new-password" minlength="12" required /></label><button class="button primary full">Registrera</button><button id="showLogin" class="button ghost full" type="button">Tillbaka</button></form><p id="registerMessage" class="form-message"></p></section></main>
 
-    <main id="resetView" class="auth-shell" hidden>
-      <section class="auth-card" aria-labelledby="resetTitle">
-        <div class="brand-mark" aria-hidden="true">NC</div>
-        <p class="eyebrow">Återställ lösenord</p>
-        <h1 id="resetTitle">Välj ett nytt lösenord</h1>
-        <p class="muted">Länken kan bara användas en gång och gäller i 30 minuter.</p>
-        <form id="resetPasswordForm" class="stack">
-          <label>Nytt lösenord<input name="password" type="password" autocomplete="new-password" minlength="12" required /></label>
-          <label>Upprepa lösenord<input name="password_confirm" type="password" autocomplete="new-password" minlength="12" required /></label>
-          <button class="button primary full" type="submit">Spara nytt lösenord</button>
-        </form>
-        <p id="resetMessage" class="form-message" role="status"></p>
-        <button class="button ghost full" type="button" data-open-login>Till inloggningen</button>
-      </section>
-    </main>
+    <main id="resetView" class="auth-shell" hidden><section class="auth-card"><p class="eyebrow">Återställ lösenord</p><h1>Välj ett nytt lösenord</h1><form id="resetPasswordForm" class="stack"><label>Nytt lösenord<input name="password" type="password" autocomplete="new-password" minlength="12" required /></label><label>Upprepa lösenord<input name="password_confirm" type="password" autocomplete="new-password" minlength="12" required /></label><button class="button primary full">Spara</button></form><p id="resetMessage" class="form-message"></p><button class="button ghost full" data-open-login>Till inloggningen</button></section></main>
 
     <div id="appView" class="app-shell" hidden>
-      <aside class="sidebar">
-        <a class="brand" href="#overview" aria-label="No-Comment-Booking">
-          <span class="brand-mark">NC</span>
-          <span
-            ><strong>No-Comment-Booking</strong
-            ><small>Smartare tidsbevakning</small></span
-          >
-        </a>
-        <nav aria-label="Huvudmeny">
-          <a class="nav-link active" href="#overview" data-section="overview"
-            ><span>01</span> Översikt</a
-          >
-          <a class="nav-link" href="#settings" data-section="settings"
-            ><span>02</span> Inställningar</a
-          >
-          <a class="nav-link" href="#activity" data-section="activity"
-            ><span>03</span> Aktivitet</a
-          >
-          <a id="adminNav" class="nav-link" href="#users" data-section="users" hidden
-            ><span>04</span> Användare</a
-          >
-        </nav>
-        <div class="privacy-note">
-          <span class="privacy-icon">✓</span>
-          <div>
-            <strong>Privat session</strong
-            ><small id="privacyText">Cookies sparas aldrig.</small>
-          </div>
-        </div>
-      </aside>
+      <header class="app-header">
+        <strong>No-Comment-Booking</strong>
+        <nav id="adminTopNav" class="admin-top-nav" hidden aria-label="Administration"><button class="active" data-admin-view="monitor">Bevakning</button><button data-admin-view="users">Användare</button></nav>
+        <div class="top-actions"><span id="connectionBadge" class="connection-badge reconnecting">Återansluter</span><span id="modeBadge" class="badge">LOCAL</span><span id="accountEmail"></span><button id="logoutButton" class="button ghost" hidden>Logga ut</button><button id="exitButton" class="button ghost">Stäng</button></div>
+      </header>
 
       <main class="workspace">
-        <header class="topbar">
-          <button
-            id="menuButton"
-            class="icon-button menu-button"
-            aria-label="Öppna meny"
-          >
-            ☰
-          </button>
-          <div>
-            <p class="eyebrow">Kontrollpanel</p>
-            <h1>Din provtidsbevakning</h1>
-          </div>
-          <div class="top-actions">
-            <span id="accountEmail" class="account-email" hidden></span>
-            <span id="connectionBadge" class="connection-badge reconnecting" role="status">
-              Återansluter
-            </span>
-            <span id="modeBadge" class="badge">LOCAL</span>
-            <button id="logoutButton" class="button ghost" hidden>
-              Logga ut
-            </button>
-            <button id="exitButton" class="button ghost">
-              Stäng programmet
-            </button>
-          </div>
-        </header>
+        <section id="monitorView">
+          <div class="hero-card compact"><div><p class="eyebrow light">Aktuell status</p><h1 id="statusTitle">Redo att starta</h1><p id="statusDescription">Identifiera dig med BankID för att börja.</p></div><div class="status-orbit"><span id="statusDot"></span></div></div>
+          <div class="metric-grid"><article class="metric"><span>Åtgärd</span><strong id="metricMode">Notifiering</strong><small>Ingen reservation görs</small></article><article class="metric"><span>Intervall</span><strong id="metricInterval">15 sek</strong><small>Fast och serverstyrt</small></article><article class="metric"><span>Status</span><strong id="metricEvent">Redo</strong><small id="metricEventTime">Väntar på start</small></article></div>
 
-        <section id="overview" class="page-section">
-          <div class="hero-card">
-            <div>
-              <p class="eyebrow light">Aktuell status</p>
-              <h2 id="statusTitle">Redo att starta</h2>
-              <p id="statusDescription">
-                Fyll i dina uppgifter och starta bevakningen när du är klar.
-              </p>
-            </div>
-            <div class="status-orbit"><span id="statusDot"></span></div>
-          </div>
-          <div class="metric-grid">
-            <article class="metric">
-              <span>Läge</span
-              ><strong id="metricMode">Endast notifiering</strong
-              ><small>Vald åtgärd vid träff</small>
-            </article>
-            <article class="metric">
-              <span>Intervall</span><strong id="metricInterval">60 sek</strong
-              ><small>Mellan kontroller</small>
-            </article>
-            <article class="metric">
-              <span>Senaste händelse</span
-              ><strong id="metricEvent">Ingen ännu</strong
-              ><small id="metricEventTime">Bevakningen har inte startat</small>
-            </article>
-          </div>
-        </section>
+          <ol class="wizard-progress" aria-label="Bevakningssteg"><li class="active" data-progress="bankid">1. BankID</li><li data-progress="options">2. Alternativ</li><li data-progress="locations">3. Orter</li><li data-progress="schedule">4. Datum och tid</li><li data-progress="notifications">5. Notifiering</li></ol>
+          <form id="monitorForm" novalidate>
+            <section class="wizard-step" data-step="bankid"><p class="eyebrow">Steg 1</p><h2>Logga in med BankID</h2><p>Din identitet används endast för att hämta dina personliga bokningsalternativ.</p><button id="bankidButton" class="button primary" type="button">Anslut Mobilt BankID</button><span id="bankidSummary" class="muted">Inte anslutet</span><input name="name" type="hidden" /><input name="ssn" type="hidden" /></section>
 
-        <form id="monitorForm" novalidate>
-          <section id="settings" class="page-section">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Inställningar</p>
-                <h2>Vad ska bevakas?</h2>
-              </div>
-              <p>BankID hämtar dina personliga bokningsalternativ.</p>
-            </div>
+            <section class="wizard-step" data-step="loading" hidden><div class="loading-state"><span class="spinner"></span><p class="eyebrow">Hämtar dina alternativ</p><h2>Kontrollerar behörigheter…</h2><p>Det kan ta några sekunder.</p></div></section>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <span class="step-number">1</span>
-                <div>
-                  <h3>BankID och prov</h3>
-                  <p>Din identitet, dina behörigheter och provorter hämtas automatiskt.</p>
-                </div>
-              </div>
-              <div class="auth-actions">
-                <button id="bankidButton" class="button secondary" type="button">
-                  Anslut Mobilt BankID
-                </button>
-                <span id="bankidSummary" class="muted">Inte anslutet</span>
-              </div>
-              <input name="name" type="hidden" value="" />
-              <div id="identityFallback" class="identity-fallback" hidden>
-                <p>Trafikverket lämnade inte personnumret efter BankID. Ange det endast som reserv.</p>
-                <label>Personnummer
-                  <input
-                    name="ssn"
-                    inputmode="numeric"
-                    autocomplete="off"
-                    pattern="[0-9]{8}-?[0-9]{4}"
-                  />
-                </label>
-              </div>
-              <div class="form-grid">
-                <label>Behörighet *
-                  <select name="licence_id" required disabled>
-                    <option value="">Anslut BankID för att hämta alternativ</option>
-                  </select>
-                </label>
-                <label>Provtyp *
-                  <select name="examination_type_id" required disabled>
-                    <option value="">Välj behörighet först</option>
-                  </select>
-                </label>
-                <label>Växellåda / fordonstyp *
-                  <select name="vehicle_type_id" required disabled>
-                    <option value="">Välj behörighet först</option>
-                  </select>
-                </label>
-                <label>Hyrbilsalternativ *
-                  <select name="occasion_choice_id" required disabled>
-                    <option value="">Välj behörighet först</option>
-                  </select>
-                </label>
-                <label class="wide-field">Sök provort
-                  <input id="locationSearch" type="search" placeholder="Skriv ett ortsnamn" autocomplete="off" />
-                </label>
-                <label>Huvudort *
-                  <select name="location_id" required disabled>
-                    <option value="">Anslut BankID för att indexera orter</option>
-                  </select>
-                </label>
-                <label>Närliggande orter
-                  <select name="nearby_location_ids" multiple size="5" disabled></select>
-                  <small id="nearbyHelp">Välj en eller flera orter.</small>
-                </label>
-              </div>
-            </article>
+            <section class="wizard-step" data-step="options" hidden><p class="eyebrow">Steg 2</p><h2>Välj behörighet och prov</h2><div class="form-grid"><label>Behörighet<select name="licence_id" required disabled><option value="">Välj behörighet</option></select></label><label>Provtyp<select name="examination_type_id" required disabled><option value="">Välj provtyp</option></select></label><label>Växellåda / fordonstyp<select name="vehicle_type_id" required disabled><option value="">Välj alternativ</option></select></label><label>Hyrbil<select name="occasion_choice_id" required disabled><option value="">Välj alternativ</option></select></label></div><div class="wizard-actions"><button class="button primary" type="button" data-next="locations">Fortsätt</button></div></section>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <span class="step-number">2</span>
-                <div>
-                  <h3>Datum och tid</h3>
-                  <p>Begränsa träffarna till tider som passar dig.</p>
-                </div>
-              </div>
-              <div class="form-grid">
-                <label>Från datum<input name="date_from" type="date" required /></label>
-                <label>Till datum<input name="date_to" type="date" /></label>
-                <label
-                  >Tidigast<input
-                    name="earliest_time"
-                    type="time"
-                    value="08:00"
-                /></label>
-                <label
-                  >Senast<input name="latest_time" type="time" value="17:00"
-                /></label>
-                <label
-                  >Kontrollintervall<input
-                    name="poll_interval_seconds"
-                    type="number"
-                    min="10"
-                    value="60"
-                  /><small>Minst 10 sekunder.</small></label
-                >
-                <fieldset class="weekday-field">
-                  <legend>Veckodagar</legend>
-                  <div class="weekday-list">
-                    <label
-                      ><input
-                        type="checkbox"
-                        name="weekday"
-                        value="0"
-                        checked
-                      /><span>M</span></label
-                    >
-                    <label
-                      ><input
-                        type="checkbox"
-                        name="weekday"
-                        value="1"
-                        checked
-                      /><span>T</span></label
-                    >
-                    <label
-                      ><input
-                        type="checkbox"
-                        name="weekday"
-                        value="2"
-                        checked
-                      /><span>O</span></label
-                    >
-                    <label
-                      ><input
-                        type="checkbox"
-                        name="weekday"
-                        value="3"
-                        checked
-                      /><span>T</span></label
-                    >
-                    <label
-                      ><input
-                        type="checkbox"
-                        name="weekday"
-                        value="4"
-                        checked
-                      /><span>F</span></label
-                    >
-                    <label
-                      ><input type="checkbox" name="weekday" value="5" /><span
-                        >L</span
-                      ></label
-                    >
-                    <label
-                      ><input type="checkbox" name="weekday" value="6" /><span
-                        >S</span
-                      ></label
-                    >
-                  </div>
-                </fieldset>
-              </div>
-            </article>
+            <section class="wizard-step" data-step="locations" hidden><p class="eyebrow">Steg 3</p><h2>Välj provorter</h2><p>Välj mellan en och fyra orter.</p><label class="search-field">Sök ort<input id="locationSearch" type="search" placeholder="Skriv ortsnamn" autocomplete="off" /></label><div id="locationChoices" class="location-choices" role="group" aria-label="Provorter"></div><p id="locationCount" class="selection-count">0 av 4 valda</p><input name="location_id" type="hidden" /><select name="nearby_location_ids" multiple hidden></select><div class="wizard-actions"><button class="button ghost" type="button" data-back="options">Tillbaka</button><button class="button primary" type="button" data-next="schedule">Fortsätt</button></div></section>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <span class="step-number">3</span>
-                <div>
-                  <h3>Åtgärd vid träff</h3>
-                  <p>Välj hur långt tjänsten ska gå automatiskt.</p>
-                </div>
-              </div>
-              <div class="mode-grid">
-                <label class="mode-card"
-                  ><input
-                    type="radio"
-                    name="booking_mode"
-                    value="notify"
-                    checked
-                  /><span class="mode-check">✓</span><strong>Notifiera</strong
-                  ><small>Skicka notis men gör ingen reservation.</small></label
-                >
-                <label class="mode-card"
-                  ><input
-                    type="radio"
-                    name="booking_mode"
-                    value="reserve"
-                  /><span class="mode-check">✓</span><strong>Reservera</strong
-                  ><small
-                    >Reservera första träffen och öppna bokningssidan.</small
-                  ></label
-                >
-                <label class="mode-card"
-                  ><input type="radio" name="booking_mode" value="book" /><span
-                    class="mode-check"
-                    >✓</span
-                  ><strong>Boka åt mig</strong
-                  ><small
-                    >Reservera och välj alltid Pay later/faktura.</small
-                  ></label
-                >
-              </div>
-            </article>
+            <section class="wizard-step" data-step="schedule" hidden><p class="eyebrow">Steg 4</p><h2>Datum och tid</h2><div class="form-grid"><label>Från datum<input name="date_from" type="date" required /></label><label>Till datum<input name="date_to" type="date" /></label><label>Tidigast<input name="earliest_time" type="time" value="08:00" /></label><label>Senast<input name="latest_time" type="time" value="17:00" /></label><fieldset class="weekday-field"><legend>Veckodagar</legend><div class="weekday-list"><label><input type="checkbox" name="weekday" value="0" checked /><span>M</span></label><label><input type="checkbox" name="weekday" value="1" checked /><span>T</span></label><label><input type="checkbox" name="weekday" value="2" checked /><span>O</span></label><label><input type="checkbox" name="weekday" value="3" checked /><span>T</span></label><label><input type="checkbox" name="weekday" value="4" checked /><span>F</span></label><label><input type="checkbox" name="weekday" value="5" /><span>L</span></label><label><input type="checkbox" name="weekday" value="6" /><span>S</span></label></div></fieldset></div><div class="wizard-actions"><button class="button ghost" type="button" data-back="locations">Tillbaka</button><button class="button primary" type="button" data-next="notifications">Fortsätt</button></div></section>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <span class="step-number">4</span>
-                <div>
-                  <h3>Discord</h3>
-                  <p>Valfri notifiering till en privat kanal.</p>
-                </div>
-              </div>
-              <div class="inline-field">
-                <label
-                  >Webhook URL<input
-                    name="discord_webhook_url"
-                    type="url"
-                    autocomplete="off" /></label
-                ><button
-                  id="discordButton"
-                  class="button secondary"
-                  type="button"
-                >
-                  Testa webhook
-                </button>
-              </div>
-            </article>
-
-            <input name="tachograph_type_id" type="hidden" value="1" />
-            <input name="language_id" type="hidden" value="13" />
-            <details id="manualFallback" class="panel advanced" hidden>
-              <summary>Manuell reserv för bokningsalternativ</summary>
-              <p class="muted">Visas endast när Trafikverkets API inte kunde lämna kompletta alternativ.</p>
-              <div class="form-grid advanced-grid">
-                <label
-                  >Manuellt Behörighets-ID<input
-                    name="manual_licence_id"
-                    type="number"
-                    min="1"
-                /></label>
-                <label
-                  >Manuellt Provtyp-ID<input
-                    name="manual_examination_type_id"
-                    type="number"
-                    min="1"
-                /></label>
-                <label
-                  >Manuellt Plats-ID<input
-                    name="manual_location_id"
-                    type="number"
-                    min="1"
-                /></label>
-                <button id="manualIdsButton" class="button secondary" type="button">
-                  Använd manuella ID:n
-                </button>
-                <label
-                  >Fordonstyp-ID<input
-                    name="manual_vehicle_type_id"
-                    type="number"
-                    min="1"
-                /></label>
-                <label
-                  >Valtyp-ID<input
-                    name="manual_occasion_choice_id"
-                    type="number"
-                    min="1"
-                /></label>
-              </div>
-            </details>
-          </section>
-
-          <section id="activity" class="page-section">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Aktivitet</p>
-                <h2>Händelser i realtid</h2>
-              </div>
-              <button id="clearActivity" class="button ghost" type="button">
-                Rensa visning
-              </button>
-            </div>
-            <div id="activityList" class="activity-list">
-              <div class="empty-state">
-                <span>↻</span><strong>Inga händelser ännu</strong>
-                <p>Här visas inloggning, sökningar, reservationer och fel.</p>
-              </div>
-            </div>
-          </section>
-
-          <footer class="action-bar">
-            <div>
-              <strong id="footerStatus">Redo</strong
-              ><small>Inställningarna sparas inte lokalt efter avslut.</small>
-            </div>
-            <div>
-              <button
-                id="stopButton"
-                class="button danger"
-                type="button"
-                disabled
-              >
-                Stoppa</button
-              ><button id="startButton" class="button primary" type="submit">
-                Starta bevakning
-              </button>
-            </div>
-          </footer>
-        </form>
-
-        <section id="users" class="page-section" hidden>
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Administration</p>
-              <h2>Användarkonton</h2>
-            </div>
-            <button id="createUser" class="button primary" type="button">Skapa användare</button>
-          </div>
-          <p class="muted">
-            Sök, aktivera och administrera konton. Roller och åtkomst kontrolleras alltid på servern.
-          </p>
-          <form id="userSearchForm" class="admin-toolbar" role="search">
-            <label><span class="sr-only">Sök användare</span><input id="userSearch" type="search" placeholder="Sök e-post eller namn" autocomplete="off" /></label>
-            <label><span class="sr-only">Filtrera status</span><select id="userStatusFilter"><option value="">Alla statusar</option><option value="pending">Väntar</option><option value="active">Aktiv</option><option value="disabled">Avstängd</option></select></label>
-            <label><span class="sr-only">Filtrera roll</span><select id="userRoleFilter"><option value="">Alla roller</option><option value="user">Användare</option><option value="admin">Administratör</option></select></label>
-            <button class="button secondary" type="submit">Sök</button>
-            <button id="refreshUsers" class="button ghost" type="button">Uppdatera</button>
+            <section class="wizard-step" data-step="notifications" hidden><p class="eyebrow">Steg 5</p><h2>Åtgärd vid träff</h2><div class="mode-card selected"><strong>Notifiera mig</strong><small>Bevakningen meddelar dig. Du bokar själv hos Trafikverket.</small></div><div id="discordPanel" class="notification-panel" hidden><h3>Discord</h3><p>Skicka träffar till en privat kanal.</p><div class="inline-field"><label>Webhook URL<input name="discord_webhook_url" type="url" autocomplete="off" /></label><button id="discordButton" class="button secondary" type="button">Testa</button></div></div><p id="notificationInfo" class="muted">Webbnotifieringar kan visas medan sidan är öppen.</p><div class="wizard-actions"><button class="button ghost" type="button" data-back="schedule">Tillbaka</button><button id="startButton" class="button primary" type="submit">Starta bevakning</button></div></section>
+            <input name="tachograph_type_id" type="hidden" value="1" /><input name="language_id" type="hidden" value="13" />
           </form>
-          <p id="userResultCount" class="result-count" role="status"></p>
-          <div id="userList" class="user-list" aria-live="polite"></div>
+
+          <section id="activity" class="admin-events" hidden><div class="section-heading"><div><p class="eyebrow">Endast administratör</p><h2>Händelser i realtid</h2></div><button id="clearActivity" class="button ghost">Rensa visning</button></div><div id="activityList" class="activity-list"><div class="empty-state"><strong>Inga händelser ännu</strong></div></div></section>
+          <footer class="action-bar"><div><strong id="footerStatus">Redo</strong><small>Kontroll sker automatiskt var 15:e sekund.</small></div><button id="stopButton" class="button danger" type="button" disabled>Stoppa bevakning</button></footer>
         </section>
+
+        <section id="users" hidden><div class="section-heading"><div><p class="eyebrow">Administration</p><h1>Användare</h1></div><button id="createUser" class="button primary">Skapa användare</button></div><div class="panel policy-panel"><label class="check"><input id="discordDefault" type="checkbox" /><span>Ge nya användare Discord-alternativet</span></label><label class="check"><input id="discordApplyExisting" type="checkbox" /><span>Tillämpa även på befintliga användare</span></label><button id="saveDiscordPolicy" class="button secondary">Spara Discord-policy</button></div><form id="userSearchForm" class="admin-toolbar"><input id="userSearch" type="search" placeholder="Sök e-post eller namn" /><select id="userStatusFilter"><option value="">Alla statusar</option><option value="pending">Väntar</option><option value="active">Aktiv</option><option value="disabled">Avstängd</option></select><select id="userRoleFilter"><option value="">Alla roller</option><option value="user">Användare</option><option value="admin">Administratör</option></select><button class="button secondary">Sök</button><button id="refreshUsers" class="button ghost" type="button">Uppdatera</button></form><p id="userResultCount"></p><div id="userList" class="user-list"></div></section>
       </main>
     </div>
 
-    <dialog id="eventDialog" class="event-dialog">
-      <button id="dialogClose" class="dialog-close" aria-label="Stäng">
-        ×
-      </button>
-      <div id="dialogIcon" class="dialog-icon">✓</div>
-      <h2 id="dialogTitle">Händelse</h2>
-      <p id="dialogMessage"></p>
-      <a
-        id="browserLink"
-        class="button primary full"
-        href="#"
-        target="_blank"
-        rel="noopener"
-        hidden
-        >Öppna säker webbläsare</a
-      >
-      <button id="reservationBook" class="button primary full" type="button" hidden>
-        Boka med Pay later
-      </button>
-      <button id="dialogOk" class="button secondary full">Fortsätt</button>
-    </dialog>
-
-    <dialog id="bankidDialog" class="event-dialog bankid-dialog">
-      <button id="bankidClose" class="dialog-close" aria-label="Stäng">×</button>
-      <div class="dialog-icon bankid-icon">ID</div>
-      <h2>Mobile BankID</h2>
-      <p id="bankidStatus">Förbereder säker inloggning…</p>
-      <img id="bankidQr" class="bankid-qr" alt="Roterande QR-kod för Mobilt BankID" hidden />
-      <p id="bankidCountdown" class="muted"></p>
-      <a id="bankidOpen" class="button primary full" href="/api/bankid/open">
-        Öppna BankID på den här enheten
-      </a>
-      <button id="bankidFallback" class="button secondary full" type="button" hidden>
-        Använd säker webbläsarfallback
-      </button>
-      <button id="bankidRetry" class="button secondary full" type="button" hidden>
-        Försök igen
-      </button>
-      <button id="bankidCancel" class="button ghost full" type="button">Avbryt</button>
-    </dialog>
-
-    <dialog id="userDialog" class="event-dialog admin-dialog">
-      <button class="dialog-close" type="button" data-close-user-dialog aria-label="Stäng">×</button>
-      <p class="eyebrow">Administration</p>
-      <h2 id="userDialogTitle">Redigera användare</h2>
-      <form id="userForm" class="stack">
-        <input name="id" type="hidden" />
-        <label>E-postadress<input name="email" type="email" autocomplete="off" maxlength="254" required /></label>
-        <label>Visningsnamn<input name="display_name" autocomplete="off" maxlength="120" /></label>
-        <div id="existingUserFields" class="stack">
-          <label>Status<select name="status"><option value="pending">Väntar</option><option value="active">Aktiv</option><option value="disabled">Avstängd</option></select></label>
-          <label>Roll<select name="role"><option value="user">Användare</option><option value="admin">Administratör</option></select></label>
-          <label class="check"><input name="paid" type="checkbox" /><span>Betalning verifierad</span></label>
-        </div>
-        <p id="userFormError" class="form-error" role="alert"></p>
-        <button class="button primary full" type="submit">Spara</button>
-        <button id="resetUserPassword" class="button secondary full" type="button">Skapa återställningslänk</button>
-        <button id="deleteUser" class="button danger full" type="button">Radera användare</button>
-      </form>
-    </dialog>
-
-    <dialog id="resetLinkDialog" class="event-dialog admin-dialog">
-      <button class="dialog-close" type="button" data-close-reset-dialog aria-label="Stäng">×</button>
-      <p class="eyebrow">Engångslänk</p>
-      <h2>Lösenordsåterställning skapad</h2>
-      <p>Länken visas bara nu och gäller i 30 minuter. Skicka den till rätt person via en säker kanal.</p>
-      <label>Återställningslänk<input id="resetLink" readonly /></label>
-      <button id="copyResetLink" class="button primary full" type="button">Kopiera länken</button>
-    </dialog>
+    <dialog id="bankidDialog" class="event-dialog bankid-dialog"><button id="bankidClose" class="dialog-close" aria-label="Stäng">×</button><div class="dialog-icon bankid-icon">ID</div><h2>Mobilt BankID</h2><p id="bankidStatus">Förbereder säker inloggning…</p><img id="bankidQr" class="bankid-qr" alt="Roterande QR-kod för Mobilt BankID" hidden /><p id="bankidCountdown" class="muted"></p><a id="bankidOpen" class="button primary full" href="/api/bankid/open">Öppna BankID på den här enheten</a><button id="bankidFallback" class="button secondary full" hidden>Använd säker webbläsarfallback</button><button id="bankidRetry" class="button secondary full" hidden>Försök igen</button><button id="bankidCancel" class="button ghost full">Avbryt</button></dialog>
+    <dialog id="eventDialog" class="event-dialog"><button id="dialogClose" class="dialog-close">×</button><div id="dialogIcon" class="dialog-icon">✓</div><h2 id="dialogTitle">Händelse</h2><p id="dialogMessage"></p><a id="browserLink" class="button primary full" href="#" target="_blank" rel="noopener" hidden>Öppna säker webbläsare</a><button id="dialogOk" class="button secondary full">Fortsätt</button></dialog>
+    <dialog id="userDialog" class="event-dialog admin-dialog"><button class="dialog-close" data-close-user-dialog>×</button><p class="eyebrow">Administration</p><h2 id="userDialogTitle">Redigera användare</h2><form id="userForm" class="stack"><input name="id" type="hidden" /><label>E-postadress<input name="email" type="email" required /></label><label>Visningsnamn<input name="display_name" maxlength="120" /></label><div id="existingUserFields" class="stack"><label>Status<select name="status"><option value="pending">Väntar</option><option value="active">Aktiv</option><option value="disabled">Avstängd</option></select></label><label>Roll<select name="role"><option value="user">Användare</option><option value="admin">Administratör</option></select></label><label class="check"><input name="paid" type="checkbox" /><span>Betalning verifierad</span></label><label class="check"><input name="discord_allowed" type="checkbox" /><span>Tillåt Discord-notiser</span></label></div><p id="userFormError" class="form-error"></p><button class="button primary full">Spara</button><button id="resetUserPassword" class="button secondary full" type="button">Skapa återställningslänk</button><button id="deleteUser" class="button danger full" type="button">Radera användare</button></form></dialog>
+    <dialog id="resetLinkDialog" class="event-dialog admin-dialog"><button class="dialog-close" data-close-reset-dialog>×</button><h2>Återställningslänk skapad</h2><label>Engångslänk<input id="resetLink" readonly /></label><button id="copyResetLink" class="button primary full">Kopiera länk</button></dialog>
   </body>
 </html>

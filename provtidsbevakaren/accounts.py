@@ -41,6 +41,7 @@ class Account:
     paid: bool
     access_source: str
     display_name: str
+    discord_allowed: bool
     created_at: str
     reset_expires_at: int | None = None
 
@@ -62,6 +63,7 @@ class Account:
             "paid": self.paid,
             "accessSource": self.access_source,
             "createdAt": self.created_at,
+            "discordAllowed": self.is_admin or self.discord_allowed,
             "passwordResetPending": bool(
                 self.reset_expires_at and self.reset_expires_at > int(time.time())
             ),
@@ -101,6 +103,12 @@ class SqliteAccountStore:
                 for row in self._connection.execute("PRAGMA table_info(accounts)").fetchall()
             }
             if {"id", "email"}.issubset(columns):
+                with self._connection:
+                    if "discord_allowed" not in columns:
+                        self._connection.execute(
+                            "ALTER TABLE accounts ADD COLUMN discord_allowed INTEGER NOT NULL DEFAULT 0"
+                        )
+                    self._create_settings_schema()
                 return
             if "username" not in columns:
                 raise AccountMigrationRequired("Kontodatabasens format känns inte igen.")
@@ -117,6 +125,7 @@ class SqliteAccountStore:
             "paid INTEGER NOT NULL DEFAULT 0, "
             "access_source TEXT NOT NULL DEFAULT 'pending', "
             "display_name TEXT NOT NULL DEFAULT '', "
+            "discord_allowed INTEGER NOT NULL DEFAULT 0, "
             "reset_token_hash TEXT UNIQUE, "
             "reset_expires_at INTEGER, "
             "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
@@ -124,6 +133,16 @@ class SqliteAccountStore:
         )
         self._connection.execute(
             "CREATE INDEX IF NOT EXISTS accounts_status_created_idx ON accounts(status,created_at)"
+        )
+        self._create_settings_schema()
+
+    def _create_settings_schema(self) -> None:
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY,value TEXT NOT NULL)"
+        )
+        self._connection.execute(
+            "INSERT INTO app_settings(key,value) VALUES('discord_default_for_new_users','0') "
+            "ON CONFLICT(key) DO NOTHING"
         )
 
     def _migrate_legacy_schema(self, legacy_email_map: dict[str, str]) -> None:
@@ -190,6 +209,7 @@ class SqliteAccountStore:
             paid=bool(row["paid"]),
             access_source=str(row["access_source"]),
             display_name=str(row["display_name"]),
+            discord_allowed=bool(row["discord_allowed"]),
             created_at=str(row["created_at"]),
             reset_expires_at=(
                 int(row["reset_expires_at"]) if row["reset_expires_at"] is not None else None
@@ -200,7 +220,7 @@ class SqliteAccountStore:
     def _select() -> str:
         return (
             "SELECT id,email,password_hash,role,status,paid,access_source,display_name,"
-            "created_at,reset_expires_at FROM accounts"
+            "discord_allowed,created_at,reset_expires_at FROM accounts"
         )
 
     def seed(self, accounts: dict[str, str], admin_emails: tuple[str, ...]) -> None:
@@ -251,11 +271,12 @@ class SqliteAccountStore:
             if int(pending_count) >= 100:
                 raise PendingAccountLimit("För många konton väntar på granskning.")
             account_id = str(uuid.uuid4())
+            discord_allowed = int(self.discord_default_for_new_users())
             try:
                 self._connection.execute(
-                    "INSERT INTO accounts(id,email,password_hash,role,status,paid,access_source) "
-                    "VALUES(?,?,?,'user','pending',0,'pending')",
-                    (account_id, normalized, password_hash),
+                    "INSERT INTO accounts(id,email,password_hash,role,status,paid,access_source,discord_allowed) "
+                    "VALUES(?,?,?,'user','pending',0,'pending',?)",
+                    (account_id, normalized, password_hash, discord_allowed),
                 )
             except sqlite3.IntegrityError as exc:
                 raise EmailUnavailable("E-postadressen används redan.") from exc
@@ -267,13 +288,14 @@ class SqliteAccountStore:
     def create_invited(self, email: str, password_hash: str, display_name: str = "") -> Account:
         normalized = normalize_email(email)
         account_id = str(uuid.uuid4())
+        discord_allowed = int(self.discord_default_for_new_users())
         try:
             with self._lock, self._connection:
                 self._connection.execute(
                     "INSERT INTO accounts("
-                    "id,email,password_hash,role,status,paid,access_source,display_name"
-                    ") VALUES(?,?,?,'user','pending',0,'admin',?)",
-                    (account_id, normalized, password_hash, display_name.strip()[:120]),
+                    "id,email,password_hash,role,status,paid,access_source,display_name,discord_allowed"
+                    ") VALUES(?,?,?,'user','pending',0,'admin',?,?)",
+                    (account_id, normalized, password_hash, display_name.strip()[:120], discord_allowed),
                 )
         except sqlite3.IntegrityError as exc:
             raise EmailUnavailable("E-postadressen används redan.") from exc
@@ -328,6 +350,7 @@ class SqliteAccountStore:
         role: str | None = None,
         status: str | None = None,
         paid: bool | None = None,
+        discord_allowed: bool | None = None,
     ) -> Account:
         current = self.get_by_id(account_id)
         if current is None:
@@ -360,6 +383,9 @@ class SqliteAccountStore:
         if paid is not None:
             fields.extend(("paid=?", "access_source=?"))
             values.extend((1 if paid else 0, "payment" if paid else "admin"))
+        if discord_allowed is not None:
+            fields.append("discord_allowed=?")
+            values.append(1 if discord_allowed else 0)
         if not fields:
             return current
         try:
@@ -374,6 +400,27 @@ class SqliteAccountStore:
         if updated is None:
             raise RuntimeError("Kontot kunde inte läsas efter uppdatering.")
         return updated
+
+    def discord_default_for_new_users(self) -> bool:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT value FROM app_settings WHERE key='discord_default_for_new_users'"
+            ).fetchone()
+        return bool(row and str(row["value"]) == "1")
+
+    def set_discord_policy(self, enabled: bool, *, apply_existing: bool = False) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT INTO app_settings(key,value) VALUES('discord_default_for_new_users',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                ("1" if enabled else "0",),
+            )
+            if apply_existing:
+                self._connection.execute(
+                    "UPDATE accounts SET discord_allowed=?,updated_at=CURRENT_TIMESTAMP "
+                    "WHERE role='user'",
+                    (1 if enabled else 0,),
+                )
 
     def set_password_reset(self, account_id: str, token_hash: str, expires_at: int) -> None:
         with self._lock, self._connection:

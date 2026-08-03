@@ -22,7 +22,7 @@ class RuntimeConflict(RuntimeError):
 
 
 class EventBuffer:
-    def __init__(self, max_events: int = 500):
+    def __init__(self, max_events: int = 100):
         self._events: deque[dict[str, Any]] = deque(maxlen=max_events)
         self._next_id = 1
         self._lock = threading.RLock()
@@ -95,8 +95,19 @@ class MonitorJob:
             "catalogUpdatedAt": self._catalog_updated_at,
         }
 
+    def status_snapshot(self) -> dict[str, Any]:
+        """Minimal live state for regular users; detailed events stay admin-only."""
+        return {
+            "state": self.state,
+            "bankId": self._bankid.snapshot(),
+            "catalogUpdatedAt": self._catalog_updated_at,
+        }
+
     def start(self, raw_config: dict[str, Any]) -> None:
         resolved_config = dict(raw_config)
+        resolved_config["poll_interval_seconds"] = 15
+        resolved_config["auto_reserve"] = False
+        resolved_config["auto_book"] = False
         resolved_config["name"] = str(resolved_config.get("name") or "Min provtidsbevakning")
         resolved_config["ssn"] = str(
             resolved_config.get("ssn") or self._bankid.personal_number()
@@ -106,6 +117,11 @@ class MonitorJob:
                 "Personnumret kunde inte hämtas från BankID. Använd reservfältet och försök igen."
             )
         config = engine.Config.from_dict(resolved_config)
+        selected_locations = [config.location_id, *config.nearby_location_ids]
+        if len(selected_locations) > 4:
+            raise engine.BotError("Du kan välja högst fyra provorter.")
+        if len(selected_locations) != len(set(selected_locations)):
+            raise engine.BotError("Varje provort får bara väljas en gång.")
         with self._lock:
             if (self._thread and self._thread.is_alive()) or self._pending_booking:
                 raise RuntimeConflict("En bevakning körs redan för användaren")
