@@ -41,6 +41,7 @@ def run() -> int:
         access_log=False,
         limit_concurrency=64,
         timeout_keep_alive=5,
+        timeout_graceful_shutdown=20,
     )
     server = uvicorn.Server(config)
     if not settings.is_server:
