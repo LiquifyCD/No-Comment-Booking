@@ -88,6 +88,7 @@ Never commit the environment file. See [architecture](docs/ARCHITECTURE.md) and 
 - Duplicate BankID, catalog, and monitoring actions are guarded.
 - Failed catalog refreshes leave the last valid in-memory catalog intact.
 - A monitor can start only after the selected licence's current examination types and locations are loaded; the UI never substitutes a generic examination ID for a missing selection.
+- Monitoring follows Trafikverket's month cursor through the full selected date range, including slots several months ahead.
 - Missing fields and expired authentication produce explicit UI errors.
 - Live status uses one same-origin SSE connection, reconnects automatically, and falls back to a bounded snapshot request only while recovering. Event buffers retain at most 100 entries per active runtime.
 - An active monitor intent and its encrypted configuration survive service or server restarts. Because BankID sessions remain memory-only, the dashboard requests a fresh BankID login and then resumes the saved monitor automatically.

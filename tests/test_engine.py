@@ -251,6 +251,39 @@ class BrowserTests(unittest.TestCase):
 
 
 class MonitorTests(unittest.TestCase):
+    def test_pages_through_month_cursor_to_reach_november_slot(self):
+        client = Mock(spec=bot.TrafikverketClient)
+        client.occasion_bundles.side_effect = [
+            {"data": {"bundles": [], "searchedMonths": 1}},
+            {"data": {"bundles": [], "searchedMonths": 3}},
+            {
+                "data": {
+                    "bundles": [
+                        {
+                            "cost": 900,
+                            "occasions": [
+                                {
+                                    "locationId": 1000130,
+                                    "locationName": "Skövde",
+                                    "date": "2026-11-13",
+                                    "time": "11:00",
+                                }
+                            ],
+                        }
+                    ],
+                    "searchedMonths": 4,
+                }
+            },
+        ]
+        with patch("provtidsbevakaren.engine.local_today", return_value=date(2026, 8, 4)):
+            result = bot.fetch_occasion_pages(
+                client,
+                bot.build_booking_session(config()),
+                config(date_to="2026-12-31"),
+            )
+        self.assertEqual("2026-11-13", result["data"]["bundles"][0]["occasions"][0]["date"])
+        self.assertEqual([0, 1, 3], [call.args[1]["searchedMonths"] for call in client.occasion_bundles.call_args_list])
+
     def test_booking_hindrance_blocks_autobook_before_slot_search(self):
         client = Mock(spec=bot.TrafikverketClient)
         client.booking_hindrances.return_value = {

@@ -95,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.8.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.8.1"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 

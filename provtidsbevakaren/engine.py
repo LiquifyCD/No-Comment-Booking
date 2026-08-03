@@ -688,6 +688,44 @@ def build_occasion_query(cfg: Config) -> dict[str, Any]:
     }
 
 
+def fetch_occasion_pages(
+    client: TrafikverketClient,
+    booking_session: dict[str, Any],
+    cfg: Config,
+) -> dict[str, Any]:
+    """Follow Trafikverket's month cursor through the configured end month."""
+    today = local_today(cfg)
+    end = datetime.strptime(cfg.date_to, "%Y-%m-%d").date() if cfg.date_to else today
+    target_month = max(0, (end.year - today.year) * 12 + end.month - today.month)
+    cursor = 0
+    bundles: list[dict[str, Any]] = []
+    seen_slots: set[str] = set()
+
+    for _ in range(min(target_month + 1, 13)):
+        query = build_occasion_query(cfg)
+        query["searchedMonths"] = cursor
+        result = client.occasion_bundles(booking_session, query)
+        page = nested(result, "data", "bundles")
+        if not isinstance(page, list):
+            raise ApiResponseError("API-fältet data.bundles är inte en lista")
+        for bundle in page:
+            occasions = bundle.get("occasions") if isinstance(bundle, dict) else None
+            if not isinstance(occasions, list):
+                raise ApiResponseError("Ett bundle saknar listan occasions")
+            keys = [slot_key(item) for item in occasions if isinstance(item, dict)]
+            if any(key not in seen_slots for key in keys):
+                bundles.append(bundle)
+                seen_slots.update(keys)
+
+        result_data = result.get("data") if isinstance(result, dict) else None
+        raw_next = result_data.get("searchedMonths") if isinstance(result_data, dict) else None
+        if not isinstance(raw_next, int) or raw_next <= cursor or raw_next >= target_month:
+            break
+        cursor = raw_next
+
+    return {"data": {"bundles": bundles}}
+
+
 def extract_matching_occasions(result: dict[str, Any], cfg: Config) -> list[dict[str, Any]]:
     bundles = nested(result, "data", "bundles")
     if not isinstance(bundles, list):
@@ -821,7 +859,7 @@ def run_monitor(
     while not stop_event.is_set() and (max_polls is None or polls < max_polls):
         started = time.monotonic()
         try:
-            result = client.occasion_bundles(booking_session, build_occasion_query(cfg))
+            result = fetch_occasion_pages(client, booking_session, cfg)
             matches = extract_matching_occasions(result, cfg)
             new_matches = [occasion for occasion in matches if slot_key(occasion) not in seen]
             for occasion in new_matches:
