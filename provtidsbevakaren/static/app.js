@@ -84,7 +84,10 @@ async function api(url, options = {}) {
   if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (state.csrf && options.method && !["GET", "HEAD"].includes(options.method)) headers["X-CSRF-Token"] = state.csrf;
   const response = await fetch(url, { credentials: "same-origin", ...options, headers });
-  if (response.status === 401) { showView("login"); throw new Error("Sessionen har gått ut."); }
+  if (response.status === 401 && url !== "/api/auth/login") {
+    showView("login");
+    throw new Error("Sessionen har gått ut.");
+  }
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try { const value = await response.json(); detail = value.detail || detail; } catch {}

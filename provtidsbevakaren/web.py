@@ -229,7 +229,10 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
             )
             raise HTTPException(status_code=403, detail=detail) from exc
         if not session:
-            raise HTTPException(status_code=401, detail="Invalid credentials or too many attempts")
+            raise HTTPException(
+                status_code=401,
+                detail="Fel e-postadress eller lösenord, eller för många försök.",
+            )
         response = Response(status_code=204)
         set_session_cookie(response, session)
         return response

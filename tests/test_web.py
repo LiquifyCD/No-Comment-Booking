@@ -95,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.6.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.6.1"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -148,6 +148,7 @@ class LocalWebTests(unittest.TestCase):
         self.assertNotIn('name="username"', page)
         self.assertIn("/api/auth/reset-password", script)
         self.assertIn("/api/admin/users", script)
+        self.assertIn('response.status === 401 && url !== "/api/auth/login"', script)
 
     def test_bootstrap_never_returns_saved_identity_or_discord_secret(self):
         self.login()
@@ -264,7 +265,9 @@ class ServerWebTests(unittest.TestCase):
         return bootstrap, {"X-CSRF-Token": bootstrap["csrfToken"]}
 
     def test_login_uses_secure_cookie_and_generic_failure(self):
-        self.assertEqual(401, self.login(password="wrong").status_code)
+        invalid = self.login(password="wrong")
+        self.assertEqual(401, invalid.status_code)
+        self.assertIn("Fel e-postadress eller lösenord", invalid.json()["detail"])
         self.assertEqual(401, self.login("not-an-email").status_code)
         self.assertEqual(
             422,
