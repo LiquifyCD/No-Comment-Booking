@@ -76,9 +76,24 @@ class LocalWebTests(unittest.TestCase):
         self.assertFalse(submitted["auto_reserve"])
         self.assertFalse(submitted["auto_book"])
 
+    def test_monitor_start_preserves_explicit_auto_booking_choice(self):
+        bootstrap = self.login()
+        config = {**VALID_CONFIG, "auto_book": True}
+        with patch("provtidsbevakaren.runtime.MonitorJob.start") as start:
+            response = self.client.post(
+                "/api/monitor/start",
+                json=config,
+                headers={"X-CSRF-Token": bootstrap["csrfToken"]},
+            )
+        self.assertEqual(200, response.status_code)
+        submitted = start.call_args.args[0]
+        self.assertTrue(submitted["auto_book"])
+        self.assertFalse(submitted["auto_reserve"])
+        self.assertEqual(15, submitted["poll_interval_seconds"])
+
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.5.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.5.1"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -87,7 +102,7 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn("/api/live/stream", self.app.openapi()["paths"])
         self.assertNotIn("/api/events/stream", self.app.openapi()["paths"])
 
-    def test_frontend_has_wizard_without_identity_reservation_sidebar_or_logo(self):
+    def test_frontend_has_wizard_with_booking_choice_and_without_visible_interval(self):
         transport = self.client.get("/static/live-transport.js").text
         page = self.client.get("/static/index.html").text
         script = self.client.get("/static/app.js").text
@@ -100,7 +115,15 @@ class LocalWebTests(unittest.TestCase):
         self.assertNotIn('>NC<', page)
         self.assertNotIn('name="poll_interval_seconds"', page)
         self.assertNotIn("Reservera", page)
+        self.assertNotIn(">Intervall<", page)
+        self.assertNotIn("15 sek", page)
+        self.assertNotIn("15:e sekund", page)
         self.assertNotIn("/api/reservation/book", script)
+        self.assertIn('name="action_mode" value="book"', page)
+        self.assertIn("Boka åt mig", page)
+        self.assertIn('auto_book: form.elements.action_mode.value === "book"', script)
+        self.assertIn("from.min = today", script)
+        self.assertIn("if (!from.value || from.value < today) from.value = today", script)
         self.assertIn('data-step="bankid"', page)
         self.assertIn('data-step="locations"', page)
         self.assertIn('id="adminTopNav"', page)

@@ -107,7 +107,6 @@ class MonitorJob:
         resolved_config = dict(raw_config)
         resolved_config["poll_interval_seconds"] = 15
         resolved_config["auto_reserve"] = False
-        resolved_config["auto_book"] = False
         resolved_config["name"] = str(resolved_config.get("name") or "Min provtidsbevakning")
         resolved_config["ssn"] = str(
             resolved_config.get("ssn") or self._bankid.personal_number()

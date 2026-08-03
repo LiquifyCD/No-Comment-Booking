@@ -109,7 +109,7 @@ async function loadLicenceOptions() {
 function updateStatus(snapshot) {
   const labels = { idle: "Redo att starta", authentication: "Väntar på BankID", authenticated: "BankID klart", starting: "Startar", running: "Bevakning aktiv", stopping: "Stoppar", error: "Ett fel uppstod" };
   $("#statusTitle").textContent = labels[snapshot.state] || snapshot.state;
-  $("#statusDescription").textContent = snapshot.state === "running" ? "Lediga tider kontrolleras var 15:e sekund." : "Följ stegen för att konfigurera bevakningen.";
+  $("#statusDescription").textContent = snapshot.state === "running" ? "Lediga tider kontrolleras automatiskt." : "Följ stegen för att konfigurera bevakningen.";
   $("#footerStatus").textContent = labels[snapshot.state] || snapshot.state;
   $("#stopButton").disabled = !["running", "starting", "authentication"].includes(snapshot.state);
   const bankId = snapshot.bankId || {};
@@ -184,7 +184,7 @@ function monitorPayload() {
     date_from: form.elements.date_from.value || null, date_to: form.elements.date_to.value || null,
     earliest_time: form.elements.earliest_time.value || null, latest_time: form.elements.latest_time.value || null,
     allowed_weekdays: weekdays, discord_webhook_url: state.discordAllowed ? form.elements.discord_webhook_url.value.trim() : "",
-    timezone: "Europe/Stockholm",
+    auto_book: form.elements.action_mode.value === "book", timezone: "Europe/Stockholm",
   };
 }
 
@@ -192,6 +192,7 @@ function validateStep(step) {
   if (step === "locations" && !Number(form.elements.licence_id.value)) return "Välj en behörighet.";
   if (step === "schedule" && !state.selectedLocations.length) return "Välj minst en provort.";
   if (step === "notifications" && !form.elements.date_from.value) return "Välj ett startdatum.";
+  if (step === "notifications" && form.elements.date_from.value < form.elements.date_from.min) return "Från datum kan inte vara tidigare än idag.";
   return "";
 }
 
@@ -230,6 +231,25 @@ $("#bankidClose").addEventListener("click", () => $("#bankidDialog").close());
 $("#bankidRetry").addEventListener("click", () => api("/api/bankid/retry", { method: "POST", body: "{}" }).catch((error) => toast(error.message)));
 $("#bankidFallback").addEventListener("click", () => api("/api/bankid/browser-fallback", { method: "POST", body: "{}" }).catch((error) => toast(error.message)));
 form.elements.licence_id.addEventListener("change", loadLicenceOptions); $("#locationSearch").addEventListener("input", renderLocations);
+function localDateValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+function updateDateLimits() {
+  const today = localDateValue(), from = form.elements.date_from, to = form.elements.date_to;
+  from.min = today;
+  if (!from.value || from.value < today) from.value = today;
+  to.min = from.value;
+  if (to.value && to.value < from.value) to.value = from.value;
+}
+updateDateLimits();
+form.elements.date_from.addEventListener("change", updateDateLimits);
+$$('input[name="action_mode"]').forEach((input) => input.addEventListener("change", () => {
+  $$(".mode-card").forEach((card) => card.classList.toggle("selected", card.contains(input) && input.checked));
+  const books = form.elements.action_mode.value === "book";
+  $("#metricMode").textContent = books ? "Boka åt mig" : "Notifiering";
+  $("#metricModeDescription").textContent = books ? "Automatisk bokning" : "Du bokar själv";
+}));
 $$('[data-next]').forEach((button) => button.addEventListener("click", () => { const error = validateStep(button.dataset.next); error ? toast(error) : showStep(button.dataset.next); }));
 $$('[data-back]').forEach((button) => button.addEventListener("click", () => showStep(button.dataset.back)));
 form.addEventListener("submit", async (event) => { event.preventDefault(); const error = validateStep("notifications"); if (error) return toast(error); try { await api("/api/monitor/start", { method: "POST", body: JSON.stringify(monitorPayload()) }); toast("Bevakningen startar."); } catch (err) { toast(err.message); } });

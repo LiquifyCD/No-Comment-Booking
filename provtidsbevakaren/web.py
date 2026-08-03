@@ -81,6 +81,7 @@ class MonitorConfigPayload(BaseModel):
     latest_time: str | None = None
     allowed_weekdays: list[int] | None = None
     discord_webhook_url: str = ""
+    auto_book: bool = False
     timezone: str = Field(default="Europe/Stockholm", min_length=1, max_length=80)
 
     @model_validator(mode="after")
@@ -594,7 +595,6 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         raw_config = payload.model_dump()
         raw_config["poll_interval_seconds"] = 15
         raw_config["auto_reserve"] = False
-        raw_config["auto_book"] = False
         if raw_config.get("discord_webhook_url") and not (
             account and (account.is_admin or account.discord_allowed)
         ):

@@ -53,6 +53,7 @@ def main() -> None:
     parser.add_argument("base_url")
     parser.add_argument("--email")
     parser.add_argument("--password")
+    parser.add_argument("--local-token", help="Use a local launch token instead of email login")
     parser.add_argument("--credentials-file", type=Path)
     parser.add_argument("--output", type=Path, default=Path("artifacts"))
     parser.add_argument(
@@ -68,28 +69,32 @@ def main() -> None:
             credentials[key.strip().casefold()] = value.strip()
         args.email = credentials.get("email")
         args.password = credentials.get("password")
-    if not args.email or not args.password:
+    if not args.local_token and (not args.email or not args.password):
         parser.error("provide --email/--password or --credentials-file")
     args.output.mkdir(parents=True, exist_ok=True)
 
     desktop = browser(1440, 1000)
     try:
-        desktop.get(args.base_url)
         wait = WebDriverWait(desktop, 15)
-        wait.until(conditions.visibility_of_element_located((By.ID, "homeTitle")))
-        desktop.find_element(By.TAG_NAME, "body").send_keys(Keys.TAB)
-        if "skip-link" not in desktop.switch_to.active_element.get_attribute("class"):
-            raise AssertionError("Skip link is not the first keyboard focus target")
-        desktop.switch_to.active_element.send_keys(Keys.ENTER)
-        desktop.save_screenshot(str(args.output / "homepage-desktop.png"))
-        desktop.find_element(By.CSS_SELECTOR, ".public-actions [data-open-login]").click()
-        desktop.find_element(By.CSS_SELECTOR, '#loginForm input[name="email"]').send_keys(
-            args.email
-        )
-        desktop.find_element(By.CSS_SELECTOR, '#loginForm input[name="password"]').send_keys(
-            args.password
-        )
-        desktop.find_element(By.CSS_SELECTOR, "#loginForm .button.primary").click()
+        if args.local_token:
+            separator = "&" if "?" in args.base_url else "?"
+            desktop.get(f"{args.base_url}{separator}token={args.local_token}")
+        else:
+            desktop.get(args.base_url)
+            wait.until(conditions.visibility_of_element_located((By.ID, "homeTitle")))
+            desktop.find_element(By.TAG_NAME, "body").send_keys(Keys.TAB)
+            if "skip-link" not in desktop.switch_to.active_element.get_attribute("class"):
+                raise AssertionError("Skip link is not the first keyboard focus target")
+            desktop.switch_to.active_element.send_keys(Keys.ENTER)
+            desktop.save_screenshot(str(args.output / "homepage-desktop.png"))
+            desktop.find_element(By.CSS_SELECTOR, ".public-actions [data-open-login]").click()
+            desktop.find_element(By.CSS_SELECTOR, '#loginForm input[name="email"]').send_keys(
+                args.email
+            )
+            desktop.find_element(By.CSS_SELECTOR, '#loginForm input[name="password"]').send_keys(
+                args.password
+            )
+            desktop.find_element(By.CSS_SELECTOR, "#loginForm .button.primary").click()
         wait.until(conditions.visibility_of_element_located((By.ID, "appView")))
         try:
             wait.until(lambda page: page.find_element(By.ID, "connectionBadge").text == "Live")
@@ -105,22 +110,40 @@ def main() -> None:
                 f"Live connection did not stabilize (badge={badge!r}, diagnostics={diagnostics}, "
                 f"logs={desktop.get_log('browser')})"
             ) from exc
-        desktop.find_element(By.CSS_SELECTOR, '[data-admin-view="users"]').click()
-        wait.until(conditions.visibility_of_element_located((By.ID, "userList")))
-        wait.until(lambda page: page.find_elements(By.CSS_SELECTOR, ".user-row"))
-        users_section = desktop.find_element(By.ID, "users")
-        desktop.execute_script(
-            "arguments[0].scrollIntoView({behavior:'instant',block:'start'})", users_section
+        date_limits = desktop.execute_script(
+            "const input=document.querySelector('[name=date_from]');"
+            "const now=new Date();"
+            "const today=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;"
+            "return {min:input.min,value:input.value,today};"
         )
-        wait.until(
-            lambda page: (
-                0
-                <= page.execute_script(
-                    "return arguments[0].getBoundingClientRect().top", users_section
-                )
-                < page.execute_script("return innerHeight")
+        if date_limits["min"] != date_limits["today"] or date_limits["value"] != date_limits["today"]:
+            raise AssertionError(f"Start date is not limited to local today: {date_limits}")
+        booking_choice = desktop.find_element(By.CSS_SELECTOR, 'input[name="action_mode"][value="book"]')
+        desktop.execute_script("arguments[0].click()", booking_choice)
+        if desktop.find_element(By.ID, "metricMode").text != "Boka åt mig":
+            raise AssertionError("Booking choice did not update the selected action")
+        if not desktop.execute_script("return monitorPayload().auto_book"):
+            raise AssertionError("Booking choice was not included in the monitor payload")
+        visible_text = desktop.find_element(By.TAG_NAME, "body").text.casefold()
+        if "intervall" in visible_text or "15 sek" in visible_text:
+            raise AssertionError("The fixed polling interval is still visible to the user")
+        if not args.local_token:
+            desktop.find_element(By.CSS_SELECTOR, '[data-admin-view="users"]').click()
+            wait.until(conditions.visibility_of_element_located((By.ID, "userList")))
+            wait.until(lambda page: page.find_elements(By.CSS_SELECTOR, ".user-row"))
+            users_section = desktop.find_element(By.ID, "users")
+            desktop.execute_script(
+                "arguments[0].scrollIntoView({behavior:'instant',block:'start'})", users_section
             )
-        )
+            wait.until(
+                lambda page: (
+                    0
+                    <= page.execute_script(
+                        "return arguments[0].getBoundingClientRect().top", users_section
+                    )
+                    < page.execute_script("return innerHeight")
+                )
+            )
         if args.exercise_admin:
             email = f"ui-smoke-{uuid.uuid4().hex[:10]}@example.test"
             desktop.find_element(By.ID, "createUser").click()

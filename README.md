@@ -44,6 +44,7 @@ The executable is written to `dist\No-Comment-Booking.exe`.
 - Locations are deduplicated, alphabetically sorted, and searchable.
 - A found slot can trigger a safe user-controlled notification. Booking remains a manual action at Trafikverket.
 - The polling interval is fixed to 15 seconds and enforced by the backend.
+- Users can choose notification-only monitoring or automatic booking with Pay later/invoice.
 - Detailed real-time events are admin-only. Regular accounts receive a minimal status stream.
 - Discord is admin-controlled per account, with an optional default for future users.
 
@@ -81,7 +82,7 @@ Never commit the environment file. See [architecture](docs/ARCHITECTURE.md) and 
 
 ## Reliability and safety
 
-- The public API contains no reservation or booking mutation.
+- There is no standalone public reservation endpoint. Automatic booking is accepted only as an authenticated, CSRF-protected monitoring choice and uses the in-memory BankID session.
 - Duplicate BankID, catalog, and monitoring actions are guarded.
 - Failed catalog refreshes leave the last valid in-memory catalog intact.
 - Missing fields and expired authentication produce explicit UI errors.
