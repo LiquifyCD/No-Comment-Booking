@@ -240,6 +240,7 @@ function updateStatus(snapshot) {
   $("#bankidOpen").hidden = !bankId.canOpenOnDevice;
   $("#bankidRetry").hidden = bankId.state !== "error";
   if (bankId.state === "pending") $("#bankidQr").src = `/api/bankid/qr.svg?v=${bankId.qrVersion || Date.now()}`;
+  if (bankId.state === "pending" && !$("#bankidDialog").open) $("#bankidDialog").showModal();
   if ($("#bankidDialog").open && ["idle", "cancelled"].includes(bankId.state)) $("#bankidDialog").close();
   if (bankId.authenticated && ["bankid", "loading"].includes(state.currentStep)) loadInitialCatalog();
   if (snapshot.events) renderEvents(snapshot.events);
@@ -354,7 +355,7 @@ $("#resetPasswordForm").addEventListener("submit", async (event) => { event.prev
 $("#logoutButton").addEventListener("click", async () => { await api("/api/auth/logout", { method: "POST", body: "{}" }); state.csrf = ""; showView("home"); });
 $("#exitButton").addEventListener("click", () => api("/api/app/exit", { method: "POST", body: "{}" }).catch((error) => toast(error.message)));
 
-$("#bankidButton").addEventListener("click", async () => { renderStatus(clientStatus("bankid_starting"), false); try { const result = await api("/api/bankid/start", { method: "POST", body: "{}" }); updateStatus(result); $("#bankidDialog").showModal(); } catch (error) { renderStatus(clientStatus("error", error.message, { canAuthenticate: true })); toast(error.message); } });
+$("#bankidButton").addEventListener("click", async () => { renderStatus(clientStatus("bankid_starting"), false); try { const result = await api("/api/bankid/start", { method: "POST", body: "{}" }); updateStatus(result); } catch (error) { renderStatus(clientStatus("error", error.message, { canAuthenticate: true })); toast(error.message); } });
 $("#bankidCancel").addEventListener("click", async () => { renderStatus(clientStatus("stopping"), false); const result = await api("/api/bankid/cancel", { method: "POST", body: "{}" }); updateStatus(result); $("#bankidDialog").close(); });
 $("#bankidClose").addEventListener("click", () => $("#bankidDialog").close());
 $("#bankidRetry").addEventListener("click", async () => { renderStatus(clientStatus("bankid_starting"), false); try { updateStatus(await api("/api/bankid/retry", { method: "POST", body: "{}" })); } catch (error) { renderStatus(clientStatus("error", error.message, { canAuthenticate: true })); toast(error.message); } });
