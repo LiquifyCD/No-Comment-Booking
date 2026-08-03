@@ -95,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.7.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.7.1"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -145,6 +145,7 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn('$("#wizardProgress").hidden = scanning', script)
         self.assertIn('Söker efter lediga ${licence', script)
         self.assertIn('.scan-summary{', styles)
+        self.assertIn('["idle", "cancelled"].includes(bankId.state)', script)
 
     def test_frontend_has_public_home_email_auth_and_password_reset_views(self):
         page = self.client.get("/static/index.html").text

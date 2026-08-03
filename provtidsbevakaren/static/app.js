@@ -240,6 +240,7 @@ function updateStatus(snapshot) {
   $("#bankidOpen").hidden = !bankId.canOpenOnDevice;
   $("#bankidRetry").hidden = bankId.state !== "error";
   if (bankId.state === "pending") $("#bankidQr").src = `/api/bankid/qr.svg?v=${bankId.qrVersion || Date.now()}`;
+  if ($("#bankidDialog").open && ["idle", "cancelled"].includes(bankId.state)) $("#bankidDialog").close();
   if (bankId.authenticated && ["bankid", "loading"].includes(state.currentStep)) loadInitialCatalog();
   if (snapshot.events) renderEvents(snapshot.events);
   renderMonitoringView(snapshot);
