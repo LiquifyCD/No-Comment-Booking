@@ -152,7 +152,9 @@ function startLive() {
   state.live?.stop();
   state.live = new LiveTransport({
     EventSource: window.EventSource, AbortController: window.AbortController, TextDecoder: window.TextDecoder,
-    fetch: window.fetch.bind(window), setTimeout, clearTimeout, isOnline: () => navigator.onLine,
+    fetch: window.fetch.bind(window),
+    setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window),
+    isOnline: () => navigator.onLine,
     getCursor: () => state.cursor, streamUrl: state.isAdmin ? "/api/live/stream" : "/api/status/stream",
     snapshotUrl: state.isAdmin ? "/api/live" : "/api/status",
     onSnapshot: updateStatus, onUnauthorized: () => showView("login"),
