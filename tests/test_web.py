@@ -70,6 +70,8 @@ class LocalWebTests(unittest.TestCase):
                 headers={"X-CSRF-Token": bootstrap["csrfToken"]},
             )
         self.assertEqual(200, response.status_code)
+        self.assertEqual("ready", response.json()["status"]["code"])
+        self.assertIn("canStart", response.json()["status"])
         start.assert_called_once()
         submitted = start.call_args.args[0]
         self.assertEqual(15, submitted["poll_interval_seconds"])
@@ -93,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.5.1"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.6.0"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -122,6 +124,11 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn('name="action_mode" value="book"', page)
         self.assertIn("Boka åt mig", page)
         self.assertIn('auto_book: form.elements.action_mode.value === "book"', script)
+        self.assertIn('id="statusBadge"', page)
+        self.assertIn('id="footerDescription"', page)
+        self.assertIn("function renderStatus(status, authoritative = true)", script)
+        self.assertIn('["#statusBadge", "#statusTitle", "#metricEvent", "#footerStatus"]', script)
+        self.assertIn('renderStatus(clientStatus("monitor_starting"), false)', script)
         self.assertIn("from.min = today", script)
         self.assertIn("if (!from.value || from.value < today) from.value = today", script)
         self.assertIn('data-step="bankid"', page)
@@ -309,8 +316,12 @@ class ServerWebTests(unittest.TestCase):
         self.assertEqual(self.admin_email, alice["account"]["email"])
         self.assertEqual(self.user_email, bob["account"]["email"])
         self.assertNotIn("events", bob)
+        self.assertEqual("ready", bob["status"]["code"])
+        self.assertIn("canStop", bob["status"])
         self.assertEqual(403, self.client.get("/api/live").status_code)
-        self.assertEqual(200, self.client.get("/api/status").status_code)
+        status = self.client.get("/api/status")
+        self.assertEqual(200, status.status_code)
+        self.assertEqual(bob["status"]["code"], status.json()["status"]["code"])
 
     def test_discord_permission_and_global_default_are_server_enforced(self):
         self.client.cookies.clear()

@@ -45,6 +45,8 @@ The executable is written to `dist\No-Comment-Booking.exe`.
 - A found slot can trigger a safe user-controlled notification. Booking remains a manual action at Trafikverket.
 - The polling interval is fixed to 15 seconds and enforced by the backend.
 - Users can choose notification-only monitoring or automatic booking with Pay later/invoice.
+- Every status surface consumes one canonical server status, including BankID, catalogue loading, monitoring, reservation, booking, stop, error, and action-required transitions.
+- Automatic booking verifies the exact reserved slot before payment and calls Trafikverket's booking summary after receiving a booking ID. An unconfirmed final summary is never paid again automatically.
 - Detailed real-time events are admin-only. Regular accounts receive a minimal status stream.
 - Discord is admin-controlled per account, with an optional default for future users.
 

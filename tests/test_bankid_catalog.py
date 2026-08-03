@@ -15,7 +15,7 @@ from provtidsbevakaren.catalog import (
     parse_translations,
     resolve_item_id,
 )
-from provtidsbevakaren.runtime import MonitorJob
+from provtidsbevakaren.runtime import STATUS_DEFINITIONS, MonitorJob
 from provtidsbevakaren.settings import load_settings
 from provtidsbevakaren.storage import VolatileStateStore
 
@@ -395,6 +395,8 @@ class DateAndReservationTests(unittest.TestCase):
                 },
             )
             snapshot = job.snapshot()
+            self.assertEqual("action_required", snapshot["status"]["code"])
+            self.assertFalse(snapshot["status"]["canStart"])
             self.assertNotIn("secret", repr(snapshot))
             with patch(
                 "provtidsbevakaren.runtime.engine.complete_invoice_booking",
@@ -405,14 +407,84 @@ class DateAndReservationTests(unittest.TestCase):
             ):
                 with self.assertRaises(engine.ApiResponseError):
                     job.complete_pending_booking()
+                self.assertEqual("action_required", job.status_snapshot()["status"]["code"])
                 self.assertIsNotNone(job.snapshot()["reservation"])
                 result = job.complete_pending_booking()
             self.assertEqual("B1", result["booking_id"])
+            self.assertEqual("booked", job.status_snapshot()["status"]["code"])
             self.assertIsNone(job.snapshot()["reservation"])
             close = Mock(wraps=job._client.close)
             job._client.close = close
             job.close()
             close.assert_called_once()
+
+    def test_canonical_status_model_covers_every_required_transition(self):
+        required = {
+            "ready",
+            "bankid_starting",
+            "bankid_waiting",
+            "bankid_connected",
+            "loading_options",
+            "ready_to_start",
+            "monitor_starting",
+            "monitoring",
+            "match_found",
+            "reserving",
+            "booking",
+            "booked",
+            "stopping",
+            "stopped",
+            "reconnecting",
+            "error",
+            "action_required",
+        }
+        self.assertEqual(required, set(STATUS_DEFINITIONS))
+        with tempfile.TemporaryDirectory() as directory:
+            job = MonitorJob("test", load_settings({}), VolatileStateStore(), Path(directory))
+            initial = job.status_snapshot()["status"]
+            self.assertEqual("ready", initial["code"])
+            self.assertTrue(initial["canAuthenticate"])
+            self.assertFalse(initial["canStart"])
+            job._set_state("bankid_starting")
+            job._status("Skanna QR-koden med Mobilt BankID.")
+            self.assertEqual("bankid_waiting", job.status_snapshot()["status"]["code"])
+            job._bankid._state = "complete"
+            job._status("BankID-inloggningen är klar.")
+            self.assertEqual("bankid_connected", job.status_snapshot()["status"]["code"])
+            job._catalog = BookingCatalog((), (), ())
+            job._set_state("ready_to_start")
+            ready = job.status_snapshot()["status"]
+            self.assertTrue(ready["canStart"])
+            self.assertFalse(ready["canAuthenticate"])
+            with patch("provtidsbevakaren.runtime.threading.Thread.start"):
+                job._bankid._personal_number = "00000000-0000"
+                job.start(
+                    {
+                        "name": "Status test",
+                        "ssn": "",
+                        "licence_id": 23,
+                        "examination_type_id": 52,
+                        "location_id": 10,
+                        "date_from": datetime.now(UTC).date().isoformat(),
+                        "timezone": "UTC",
+                    }
+                )
+            starting = job.status_snapshot()["status"]
+            self.assertEqual("monitor_starting", starting["code"])
+            self.assertTrue(starting["canStop"])
+            self.assertFalse(starting["canStart"])
+            for event, expected in (
+                ("match_found", "match_found"),
+                ("reserving", "reserving"),
+                ("reservation_failed", "monitoring"),
+                ("booking", "booking"),
+                ("booked", "booked"),
+            ):
+                job._handle_monitor_event(job._client, Mock(), event, {})
+                status = job.status_snapshot()["status"]
+                self.assertEqual(expected, status["code"])
+                self.assertEqual(STATUS_DEFINITIONS[expected][0], status["label"])
+            job.close()
 
 
 if __name__ == "__main__":

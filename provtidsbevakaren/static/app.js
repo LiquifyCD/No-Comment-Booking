@@ -7,7 +7,71 @@ const state = {
   csrf: "", isAdmin: false, discordAllowed: false, cursor: 0,
   catalog: { licences: [], examinationTypes: [], locations: [], vehicleTypes: [], occasionChoices: [] },
   selectedLocations: [], currentStep: "bankid", users: [], live: null,
+  status: null, authoritativeStatus: null,
 };
+
+const STATUS_FALLBACKS = {
+  ready: ["Redo", "Identifiera dig med BankID för att börja."],
+  bankid_starting: ["Startar BankID", "En säker BankID-inloggning förbereds."],
+  bankid_waiting: ["Väntar på BankID", "Skanna QR-koden eller öppna BankID."],
+  bankid_connected: ["BankID anslutet", "Din identitet har verifierats."],
+  loading_options: ["Hämtar alternativ", "Dina bokningsalternativ hämtas."],
+  ready_to_start: ["Redo att starta", "Välj inställningar och starta bevakningen."],
+  monitor_starting: ["Startar bevakning", "Inställningarna kontrolleras på servern."],
+  monitoring: ["Bevakning aktiv", "Lediga tider kontrolleras automatiskt."],
+  match_found: ["Träff hittad", "En tid som matchar dina val har hittats."],
+  reserving: ["Reserverar tid", "Den valda tiden reserveras hos Trafikverket."],
+  booking: ["Bokar tid", "Reservationen slutförs med Pay later/faktura."],
+  booked: ["Bokning klar", "Tiden är bokad och bekräftad av Trafikverket."],
+  stopping: ["Stoppar", "Pågående arbete avslutas säkert."],
+  stopped: ["Stoppad", "Bevakningen är stoppad."],
+  reconnecting: ["Återansluter", "Anslutningen till serverstatus återställs."],
+  error: ["Ett fel uppstod", "Kontrollera felet och försök igen."],
+  action_required: ["Åtgärd krävs", "En reservation behöver hanteras innan du fortsätter."],
+};
+
+function clientStatus(code, description = "", overrides = {}) {
+  const fallback = STATUS_FALLBACKS[code] || [code, description];
+  const stoppable = new Set(["bankid_starting", "bankid_waiting", "monitor_starting", "monitoring", "match_found", "reserving", "booking"]);
+  return {
+    code, label: fallback[0], description: description || fallback[1], updatedAt: Date.now() / 1000,
+    canStart: ["ready_to_start", "stopped", "booked"].includes(code),
+    canStop: stoppable.has(code),
+    canAuthenticate: ["ready", "stopped"].includes(code),
+    ...overrides,
+  };
+}
+
+function statusFromSnapshot(snapshot) {
+  if (snapshot?.status?.code) return snapshot.status;
+  const legacy = {
+    idle: "ready", authentication: "bankid_waiting", authenticated: "bankid_connected",
+    starting: "monitor_starting", running: "monitoring",
+  }[snapshot?.state] || snapshot?.state || "ready";
+  return clientStatus(legacy);
+}
+
+function renderStatus(status, authoritative = true) {
+  if (authoritative) state.authoritativeStatus = status;
+  state.status = status;
+  ["#statusBadge", "#statusTitle", "#metricEvent", "#footerStatus"].forEach((selector) => {
+    $(selector).textContent = status.label;
+  });
+  $("#statusDescription").textContent = status.description;
+  $("#metricEventTime").textContent = status.description;
+  $("#footerDescription").textContent = status.description;
+  $("#startButton").disabled = !status.canStart;
+  $("#stopButton").disabled = !status.canStop;
+  $("#bankidButton").disabled = !status.canAuthenticate;
+  $("#statusDot").dataset.status = status.code;
+  if ($("#eventDialog").open) {
+    $("#dialogTitle").textContent = status.label;
+    $("#dialogMessage").textContent = status.description;
+  }
+  if ($("#bankidDialog").open && status.code.startsWith("bankid_")) {
+    $("#bankidStatus").textContent = status.description;
+  }
+}
 
 function toast(message) {
   const node = $("#toast");
@@ -99,7 +163,7 @@ function toggleLocation(id) {
 async function loadLicenceOptions() {
   const licenceId = Number(form.elements.licence_id.value);
   if (!licenceId) return;
-  showStep("loading");
+  showStep("loading"); renderStatus(clientStatus("loading_options"), false);
   try {
     const data = await api("/api/catalog/refresh", { method: "POST", body: JSON.stringify({ ssn: "", licence_id: licenceId }) });
     applyCatalog(data); showStep("options");
@@ -107,11 +171,7 @@ async function loadLicenceOptions() {
 }
 
 function updateStatus(snapshot) {
-  const labels = { idle: "Redo att starta", authentication: "Väntar på BankID", authenticated: "BankID klart", starting: "Startar", running: "Bevakning aktiv", stopping: "Stoppar", error: "Ett fel uppstod" };
-  $("#statusTitle").textContent = labels[snapshot.state] || snapshot.state;
-  $("#statusDescription").textContent = snapshot.state === "running" ? "Lediga tider kontrolleras automatiskt." : "Följ stegen för att konfigurera bevakningen.";
-  $("#footerStatus").textContent = labels[snapshot.state] || snapshot.state;
-  $("#stopButton").disabled = !["running", "starting", "authentication"].includes(snapshot.state);
+  renderStatus(statusFromSnapshot(snapshot));
   const bankId = snapshot.bankId || {};
   $("#bankidSummary").textContent = bankId.authenticated ? "BankID anslutet" : bankId.state === "pending" ? "Väntar på BankID" : "Inte anslutet";
   $("#bankidStatus").textContent = ({ starting: "Förbereder säker inloggning…", pending: "Skanna QR-koden eller öppna BankID.", complete: "BankID-inloggningen är klar.", error: bankId.error || "BankID kunde inte anslutas." })[bankId.state] || "Förbereder säker inloggning…";
@@ -124,7 +184,7 @@ function updateStatus(snapshot) {
 }
 
 async function loadInitialCatalog() {
-  if (loadInitialCatalog.running) return; loadInitialCatalog.running = true; showStep("loading");
+  if (loadInitialCatalog.running) return; loadInitialCatalog.running = true; showStep("loading"); renderStatus(clientStatus("loading_options"), false);
   try {
     let data;
     for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -158,7 +218,13 @@ function startLive() {
     getCursor: () => state.cursor, streamUrl: state.isAdmin ? "/api/live/stream" : "/api/status/stream",
     snapshotUrl: state.isAdmin ? "/api/live" : "/api/status",
     onSnapshot: updateStatus, onUnauthorized: () => showView("login"),
-    onState: (value) => { const node = $("#connectionBadge"); node.textContent = value === "live" ? "Live" : value === "offline" ? "Offline" : "Återansluter"; node.classList.toggle("reconnecting", value !== "live"); },
+    onState: (value) => {
+      const node = $("#connectionBadge");
+      node.textContent = value === "live" ? "Live" : value === "offline" ? "Offline" : "Återansluter";
+      node.classList.toggle("reconnecting", value !== "live");
+      if (value === "live" && state.authoritativeStatus) renderStatus(state.authoritativeStatus, false);
+      else if (value !== "live") renderStatus(clientStatus("reconnecting", value === "offline" ? "Nätverket är offline. Serverstatus återansluts automatiskt." : "Anslutningen till serverstatus återställs."), false);
+    },
   });
   state.live.start();
 }
@@ -225,10 +291,10 @@ $("#resetPasswordForm").addEventListener("submit", async (event) => { event.prev
 $("#logoutButton").addEventListener("click", async () => { await api("/api/auth/logout", { method: "POST", body: "{}" }); state.csrf = ""; showView("home"); });
 $("#exitButton").addEventListener("click", () => api("/api/app/exit", { method: "POST", body: "{}" }).catch((error) => toast(error.message)));
 
-$("#bankidButton").addEventListener("click", async () => { try { await api("/api/bankid/start", { method: "POST", body: "{}" }); $("#bankidDialog").showModal(); } catch (error) { toast(error.message); } });
-$("#bankidCancel").addEventListener("click", async () => { await api("/api/bankid/cancel", { method: "POST", body: "{}" }); $("#bankidDialog").close(); });
+$("#bankidButton").addEventListener("click", async () => { renderStatus(clientStatus("bankid_starting"), false); try { const result = await api("/api/bankid/start", { method: "POST", body: "{}" }); updateStatus(result); $("#bankidDialog").showModal(); } catch (error) { renderStatus(clientStatus("error", error.message, { canAuthenticate: true })); toast(error.message); } });
+$("#bankidCancel").addEventListener("click", async () => { renderStatus(clientStatus("stopping"), false); const result = await api("/api/bankid/cancel", { method: "POST", body: "{}" }); updateStatus(result); $("#bankidDialog").close(); });
 $("#bankidClose").addEventListener("click", () => $("#bankidDialog").close());
-$("#bankidRetry").addEventListener("click", () => api("/api/bankid/retry", { method: "POST", body: "{}" }).catch((error) => toast(error.message)));
+$("#bankidRetry").addEventListener("click", async () => { renderStatus(clientStatus("bankid_starting"), false); try { updateStatus(await api("/api/bankid/retry", { method: "POST", body: "{}" })); } catch (error) { renderStatus(clientStatus("error", error.message, { canAuthenticate: true })); toast(error.message); } });
 $("#bankidFallback").addEventListener("click", () => api("/api/bankid/browser-fallback", { method: "POST", body: "{}" }).catch((error) => toast(error.message)));
 form.elements.licence_id.addEventListener("change", loadLicenceOptions); $("#locationSearch").addEventListener("input", renderLocations);
 function localDateValue() {
@@ -252,8 +318,8 @@ $$('input[name="action_mode"]').forEach((input) => input.addEventListener("chang
 }));
 $$('[data-next]').forEach((button) => button.addEventListener("click", () => { const error = validateStep(button.dataset.next); error ? toast(error) : showStep(button.dataset.next); }));
 $$('[data-back]').forEach((button) => button.addEventListener("click", () => showStep(button.dataset.back)));
-form.addEventListener("submit", async (event) => { event.preventDefault(); const error = validateStep("notifications"); if (error) return toast(error); try { await api("/api/monitor/start", { method: "POST", body: JSON.stringify(monitorPayload()) }); toast("Bevakningen startar."); } catch (err) { toast(err.message); } });
-$("#stopButton").addEventListener("click", async () => { try { await api("/api/monitor/stop", { method: "POST", body: "{}" }); toast("Bevakningen är stoppad."); } catch (error) { toast(error.message); } });
+form.addEventListener("submit", async (event) => { event.preventDefault(); const error = validateStep("notifications"); if (error) return toast(error); renderStatus(clientStatus("monitor_starting"), false); try { updateStatus(await api("/api/monitor/start", { method: "POST", body: JSON.stringify(monitorPayload()) })); toast("Bevakningen startar."); } catch (err) { renderStatus(clientStatus("error", err.message, { canStart: true })); toast(err.message); } });
+$("#stopButton").addEventListener("click", async () => { renderStatus(clientStatus("stopping"), false); try { updateStatus(await api("/api/monitor/stop", { method: "POST", body: "{}" })); toast("Bevakningen är stoppad."); } catch (error) { renderStatus(clientStatus("error", error.message)); toast(error.message); } });
 $("#discordButton").addEventListener("click", async () => { const url = form.elements.discord_webhook_url.value.trim(); try { await api("/api/discord/test", { method: "POST", body: JSON.stringify({ name: "Min provtidsbevakning", discord_webhook_url: url }) }); toast("Discord-test skickat."); } catch (error) { toast(error.message); } });
 $("#clearActivity").addEventListener("click", () => $("#activityList").innerHTML = '<div class="empty-state"><strong>Inga händelser ännu</strong></div>');
 

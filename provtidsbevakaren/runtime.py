@@ -16,6 +16,39 @@ from .storage import StateStore
 
 LOGGER = logging.getLogger("provtidsbevakaren.runtime")
 
+STATUS_DEFINITIONS: dict[str, tuple[str, str]] = {
+    "ready": ("Redo", "Identifiera dig med BankID för att börja."),
+    "bankid_starting": ("Startar BankID", "En säker BankID-inloggning förbereds."),
+    "bankid_waiting": ("Väntar på BankID", "Skanna QR-koden eller öppna BankID."),
+    "bankid_connected": ("BankID anslutet", "Din identitet har verifierats."),
+    "loading_options": ("Hämtar alternativ", "Dina bokningsalternativ hämtas."),
+    "ready_to_start": ("Redo att starta", "Välj inställningar och starta bevakningen."),
+    "monitor_starting": ("Startar bevakning", "Inställningarna kontrolleras på servern."),
+    "monitoring": ("Bevakning aktiv", "Lediga tider kontrolleras automatiskt."),
+    "match_found": ("Träff hittad", "En tid som matchar dina val har hittats."),
+    "reserving": ("Reserverar tid", "Den valda tiden reserveras hos Trafikverket."),
+    "booking": ("Bokar tid", "Reservationen slutförs med Pay later/faktura."),
+    "booked": ("Bokning klar", "Tiden är bokad och bekräftad av Trafikverket."),
+    "stopping": ("Stoppar", "Pågående arbete avslutas säkert."),
+    "stopped": ("Stoppad", "Bevakningen är stoppad."),
+    "reconnecting": ("Återansluter", "Anslutningen till serverstatus återställs."),
+    "error": ("Ett fel uppstod", "Kontrollera felet och försök igen."),
+    "action_required": ("Åtgärd krävs", "En reservation behöver hanteras innan du fortsätter."),
+}
+
+STOPPABLE_STATES = {
+    "bankid_starting",
+    "bankid_waiting",
+    "monitor_starting",
+    "monitoring",
+    "match_found",
+    "reserving",
+    "booking",
+}
+STARTABLE_STATES = {"ready_to_start", "stopped", "booked", "error"}
+AUTHENTICATABLE_STATES = {"ready", "stopped", "error"}
+TERMINAL_STATES = {"booked", "error", "action_required"}
+
 
 class RuntimeConflict(RuntimeError):
     pass
@@ -61,7 +94,9 @@ class MonitorJob:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._lock = threading.RLock()
-        self._state = "idle"
+        self._state = "ready"
+        self._status_description = STATUS_DEFINITIONS["ready"][1]
+        self._status_updated_at = time.time()
         self._browser_session: engine.BrowserLoginSession | None = None
         self._remote_view_url = ""
         self._client = engine.TrafikverketClient()
@@ -83,11 +118,45 @@ class MonitorJob:
         with self._lock:
             return self._state
 
+    def _set_state(self, code: str, description: str | None = None) -> None:
+        if code not in STATUS_DEFINITIONS:
+            raise ValueError(f"Unknown runtime state: {code}")
+        resolved_description = description or STATUS_DEFINITIONS[code][1]
+        with self._lock:
+            if code != self._state or resolved_description != self._status_description:
+                self._state = code
+                self._status_description = resolved_description
+                self._status_updated_at = time.time()
+
+    def _status_payload(self) -> dict[str, Any]:
+        with self._lock:
+            code = self._state
+            label, default_description = STATUS_DEFINITIONS[code]
+            description = self._status_description or default_description
+            updated_at = self._status_updated_at
+            catalog_ready = self._catalog is not None
+        bankid_snapshot = self._bankid.snapshot()
+        return {
+            "code": code,
+            "label": label,
+            "description": description,
+            "updatedAt": updated_at,
+            "canStart": bool(
+                code in STARTABLE_STATES and bankid_snapshot["authenticated"] and catalog_ready
+            ),
+            "canStop": code in STOPPABLE_STATES,
+            "canAuthenticate": bool(
+                code in AUTHENTICATABLE_STATES and not bankid_snapshot["authenticated"]
+            ),
+        }
+
     def snapshot(self, after: int = 0) -> dict[str, Any]:
         with self._lock:
             reservation = dict(self._pending_booking["display"]) if self._pending_booking else None
+        status = self._status_payload()
         return {
-            "state": self.state,
+            "state": status["code"],
+            "status": status,
             "events": self.events.after(after),
             "browserViewUrl": self._remote_view_url,
             "bankId": self._bankid.snapshot(),
@@ -97,8 +166,10 @@ class MonitorJob:
 
     def status_snapshot(self) -> dict[str, Any]:
         """Minimal live state for regular users; detailed events stay admin-only."""
+        status = self._status_payload()
         return {
-            "state": self.state,
+            "state": status["code"],
+            "status": status,
             "bankId": self._bankid.snapshot(),
             "catalogUpdatedAt": self._catalog_updated_at,
         }
@@ -129,7 +200,7 @@ class MonitorJob:
             self._validate_catalog_config(config)
             self._stop_event = threading.Event()
             self._pending_done = threading.Event()
-            self._state = "starting"
+            self._set_state("monitor_starting")
             raw_date = resolved_config.get("date_from")
             if raw_date and raw_date != config.date_from:
                 self.events.add(
@@ -187,6 +258,7 @@ class MonitorJob:
             except engine.BotError as exc:
                 if self._stop_event.is_set():
                     raise
+                self._set_state("action_required", f"BankID-inloggningen behöver åtgärdas: {exc}")
                 self.events.add(
                     "warning",
                     f"Den integrerade BankID-inloggningen kunde inte fortsätta: {exc}. "
@@ -200,6 +272,7 @@ class MonitorJob:
                         return
                     if self._retry_authentication.wait(0.2):
                         self._retry_authentication.clear()
+                        self._set_state("bankid_starting")
                         self.events.add("authentication", "Ett nytt BankID-försök startar.")
                         break
 
@@ -227,7 +300,7 @@ class MonitorJob:
                 return
             self._stop_event = threading.Event()
             self._cancel_authentication = threading.Event()
-            self._state = "authentication"
+            self._set_state("bankid_starting")
             self._auth_thread = threading.Thread(
                 target=self._run_authentication,
                 name=f"bankid-{self.user_id}",
@@ -239,21 +312,19 @@ class MonitorJob:
         try:
             self.events.add("authentication", "Mobilt BankID förbereds i kontrollpanelen.")
             self._integrated_authentication()
-            with self._lock:
-                self._state = "authenticated"
+            self._set_state("bankid_connected")
             self.events.add("authenticated", "BankID-inloggningen är klar.")
             self._initialize_catalog_after_authentication()
         except engine.BotError as exc:
             if self._cancel_authentication.is_set():
-                with self._lock:
-                    self._state = "idle"
+                self._set_state("stopped", "BankID-inloggningen avbröts.")
                 self.events.add("status", "BankID-inloggningen avbröts.")
             elif not self._stop_event.is_set():
-                with self._lock:
-                    self._state = "error"
+                self._set_state("error", str(exc))
                 self.events.add("error", str(exc))
 
     def cancel_authentication(self) -> None:
+        self._set_state("stopping", "BankID-inloggningen avbryts.")
         self._cancel_authentication.set()
         self._bankid.cancel()
 
@@ -264,11 +335,13 @@ class MonitorJob:
                 or (self._thread and self._thread.is_alive())
             )
         if authentication_active and self._bankid.snapshot()["state"] == "error":
+            self._set_state("bankid_starting")
             self._retry_authentication.set()
             return
         self.start_authentication()
 
     def use_browser_fallback(self) -> None:
+        self._set_state("bankid_starting", "Säker webbläsarfallback förbereds.")
         self._force_browser_fallback.set()
         self._bankid.cancel()
 
@@ -294,6 +367,7 @@ class MonitorJob:
             self.refresh_catalog("", 0)
             self.events.add("catalog", "Tillgängliga behörigheter har hämtats automatiskt.")
         except (engine.BotError, RuntimeConflict) as exc:
+            self._set_state("action_required", f"Bokningsalternativen kunde inte hämtas: {exc}")
             self.events.add(
                 "warning", f"Bokningsalternativen kunde inte hämtas automatiskt: {exc}"
             )
@@ -327,6 +401,7 @@ class MonitorJob:
                 raise RuntimeConflict("Bokningsalternativ kan inte uppdateras under bevakning.")
         if not self._catalog_lock.acquire(blocking=False):
             raise RuntimeConflict("Bokningsalternativen uppdateras redan.")
+        self._set_state("loading_options")
         try:
             if self._translations is None:
                 self._translations = catalog.parse_translations(self._client.language_support())
@@ -361,7 +436,11 @@ class MonitorJob:
                     )
                 self._catalog = fresh
                 self._catalog_updated_at = time.time()
+                self._set_state("ready_to_start")
                 return {**fresh.as_dict(), "updatedAt": self._catalog_updated_at}
+        except Exception as exc:
+            self._set_state("action_required", f"Bokningsalternativen kunde inte hämtas: {exc}")
+            raise
         finally:
             self._catalog_lock.release()
 
@@ -403,6 +482,7 @@ class MonitorJob:
                 pending = dict(self._pending_booking) if self._pending_booking else None
             if not pending:
                 raise RuntimeConflict("Det finns ingen reservation att boka.")
+            self._set_state("booking")
             try:
                 result = engine.complete_invoice_booking(
                     self._client,
@@ -410,7 +490,19 @@ class MonitorJob:
                     pending["booking_session"],
                     pending["bundle_reservation"],
                 )
+            except engine.BookingConfirmationError as exc:
+                with self._lock:
+                    self._pending_booking = None
+                    self._pending_done.set()
+                self._set_state("action_required", str(exc))
+                self.events.add(
+                    "confirmation_required",
+                    "Bokningen fick ett boknings-ID men slutstatus måste kontrolleras manuellt. Betalningen upprepas inte.",
+                    {**pending["display"], "booking_id": exc.booking_id},
+                )
+                raise
             except engine.BotError as exc:
+                self._set_state("action_required", f"Bokningen misslyckades: {exc}")
                 self.events.add(
                     "booking_error",
                     "Pay later-bokningen misslyckades. Reservationen finns kvar för ett nytt försök.",
@@ -421,6 +513,7 @@ class MonitorJob:
             with self._lock:
                 self._pending_booking = None
                 self._pending_done.set()
+            self._set_state("booked")
             self.events.add("booked", "Tiden är bokad med Pay later/faktura.", display)
             engine.notify_discord(
                 pending["config"].discord_webhook_url,
@@ -433,6 +526,10 @@ class MonitorJob:
             self._booking_lock.release()
 
     def _status(self, message: str) -> None:
+        if message.startswith("Skanna QR-koden"):
+            self._set_state("bankid_waiting")
+        elif "BankID-inloggningen är klar" in message:
+            self._set_state("bankid_connected")
         self.events.add("status", message)
 
     def _handle_monitor_event(
@@ -469,10 +566,27 @@ class MonitorJob:
                 LOGGER.exception("Could not open reservation page")
                 self.events.add("warning", f"Reservationssidan kunde inte öppnas: {exc}")
         messages = {
+            "match_found": "En matchande tid har hittats.",
+            "reserving": "Tiden reserveras hos Trafikverket.",
+            "booking": "Tiden bokas med Pay later/faktura.",
+            "reservation_failed": "Reservationen misslyckades. Bevakningen fortsätter.",
+            "confirmation_required": "Bokningen fick ett boknings-ID men slutstatus måste kontrolleras manuellt.",
             "reserved": "Tiden är reserverad. Slutför bokningen innan reservationen löper ut.",
             "booked": "Tiden är bokad med Pay later/faktura.",
             "booking_error": "Automatisk bokning misslyckades. Reservationen kan slutföras i webbläsaren.",
         }
+        state_by_event = {
+            "match_found": "match_found",
+            "reserving": "reserving",
+            "booking": "booking",
+            "reservation_failed": "monitoring",
+            "reserved": "action_required",
+            "booked": "booked",
+            "booking_error": "action_required" if self._pending_booking else "error",
+            "confirmation_required": "action_required",
+        }
+        if kind in state_by_event:
+            self._set_state(state_by_event[kind], messages.get(kind, kind))
         self.events.add(kind, messages.get(kind, kind), public_payload)
 
     def _run(self, config: engine.Config) -> None:
@@ -484,13 +598,12 @@ class MonitorJob:
 
         def event_callback(kind: str, payload: dict[str, Any]) -> None:
             self._handle_monitor_event(client, config, kind, payload)
-            if kind in {"reserved", "booking_error"}:
+            if kind in {"reserved", "booking_error", "confirmation_required"}:
                 terminal_browser_handoff.set()
 
         try:
-            with self._lock:
-                self._state = "running"
-            self.events.add("status", "Bevakningen startar.")
+            self._set_state("monitoring")
+            self.events.add("status", "Bevakningen är aktiv.")
             while not self._stop_event.is_set():
                 try:
                     engine.run_monitor(
@@ -503,8 +616,7 @@ class MonitorJob:
                     break
                 except engine.AuthenticationRequiredError:
                     self._bankid.invalidate()
-                    with self._lock:
-                        self._state = "authentication"
+                    self._set_state("bankid_starting", "BankID behöver anslutas igen.")
                     self.events.add(
                         "authentication",
                         "Mobilt BankID visas nu direkt i kontrollpanelen.",
@@ -512,39 +624,40 @@ class MonitorJob:
                     self._integrated_authentication()
                     if self._stop_event.is_set():
                         return
-                    with self._lock:
-                        self._state = "running"
+                    self._set_state("monitoring")
             if terminal_browser_handoff.is_set() and self._pending_booking:
-                with self._lock:
-                    self._state = "action_required"
+                self._set_state("action_required")
                 while not self._stop_event.wait(0.5) and not self._pending_done.is_set():
                     if self._browser_session and not self._browser_session.is_alive():
                         break
         except engine.BotError as exc:
             if not self._stop_event.is_set():
                 self.events.add("error", str(exc))
-                with self._lock:
-                    self._state = "error"
+                self._set_state("error", str(exc))
         except Exception:
             LOGGER.exception("Unexpected monitor failure")
             self.events.add("error", "Ett oväntat internt fel stoppade bevakningen.")
-            with self._lock:
-                self._state = "error"
+            self._set_state("error", "Ett oväntat internt fel stoppade bevakningen.")
         finally:
             if self._browser_session:
                 self._browser_session.close()
                 self._browser_session = None
                 self._remote_view_url = ""
-            with self._lock:
-                if self._state not in {"error"}:
-                    self._state = "idle"
-            self.events.add("stopped", "Bevakningen har stoppats.")
+            if self.state not in TERMINAL_STATES:
+                if self._stop_event.is_set():
+                    self._set_state("stopped")
+                    self.events.add("stopped", "Bevakningen har stoppats.")
+                else:
+                    self._set_state("ready_to_start")
 
     def stop(self) -> None:
         with self._lock:
             thread = self._thread
             auth_thread = self._auth_thread
-            self._state = "stopping" if thread and thread.is_alive() else "idle"
+            active = bool(
+                (thread and thread.is_alive()) or (auth_thread and auth_thread.is_alive())
+            )
+            self._set_state("stopping" if active else "stopped")
         self._stop_event.set()
         self._cancel_authentication.set()
         self._bankid.cancel()
@@ -558,6 +671,8 @@ class MonitorJob:
             )
         if auth_thread and auth_thread.is_alive():
             self.events.add("warning", "BankID-inloggningen stoppar fortfarande ett nätverksanrop.")
+        if not (thread and thread.is_alive()) and not (auth_thread and auth_thread.is_alive()):
+            self._set_state("stopped")
 
     def close(self) -> None:
         self.stop()

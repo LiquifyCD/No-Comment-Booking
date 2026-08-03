@@ -57,6 +57,12 @@ class ReservationStateError(ApiResponseError):
     pass
 
 
+class BookingConfirmationError(ApiResponseError):
+    def __init__(self, booking_id: str, message: str):
+        super().__init__(message)
+        self.booking_id = booking_id
+
+
 def _safe_http_error_detail(response: requests.Response) -> str | None:
     """Extract a short API error without exposing request data or identifiers."""
     try:
@@ -716,8 +722,21 @@ def complete_invoice_booking(
     booking_id = nested(payment_result, "data", "bookingId")
     if not isinstance(booking_id, (str, int)) or not str(booking_id):
         raise ApiResponseError("Fakturabokningen saknar bookingId")
-    summary = client.summary(cfg.ssn, str(booking_id), cfg.licence_id)
-    return {"booking_id": str(booking_id), "summary": summary}
+    resolved_booking_id = str(booking_id)
+    try:
+        summary = client.summary(cfg.ssn, resolved_booking_id, cfg.licence_id)
+    except BotError as exc:
+        raise BookingConfirmationError(
+            resolved_booking_id,
+            "Bokningen fick ett boknings-ID men slutstatus kunde inte bekräftas. Betalningen får inte upprepas automatiskt.",
+        ) from exc
+    summary_data = summary.get("data") if isinstance(summary, dict) else None
+    if not isinstance(summary_data, dict) or not summary_data:
+        raise BookingConfirmationError(
+            resolved_booking_id,
+            "Bokningen fick ett boknings-ID men sammanfattningen saknade bekräftad slutstatus. Betalningen får inte upprepas automatiskt.",
+        )
+    return {"booking_id": resolved_booking_id, "summary": summary, "confirmed": True}
 
 
 def verified_reservation_information(
@@ -791,6 +810,12 @@ def run_monitor(
             matches = extract_matching_occasions(result, cfg)
             new_matches = [occasion for occasion in matches if slot_key(occasion) not in seen]
             for occasion in new_matches:
+                popup_payload = {
+                    "date": occasion["date"],
+                    "time": str(occasion["time"])[:5],
+                    "location": occasion.get("locationName", "okänd plats"),
+                }
+                emit("match_found", popup_payload)
                 message = (
                     f"🚗 [{cfg.name}] Ny tid: {occasion['date']} {str(occasion['time'])[:5]} "
                     f"@ {occasion.get('locationName', 'okänd plats')} ({occasion.get('cost', '?')})"
@@ -800,6 +825,7 @@ def run_monitor(
                 seen.add(slot_key(occasion))
                 if cfg.auto_reserve or cfg.auto_book:
                     try:
+                        emit("reserving", popup_payload)
                         reservation_bundle = occasion.get("_reservation_bundle")
                         if not isinstance(reservation_bundle, dict):
                             raise ApiResponseError("Provtiden saknar reservationsdata")
@@ -810,11 +836,6 @@ def run_monitor(
                     except AuthenticationRequiredError:
                         raise
                     except ReservationStateError as exc:
-                        popup_payload = {
-                            "date": occasion["date"],
-                            "time": str(occasion["time"])[:5],
-                            "location": occasion.get("locationName", "okänd plats"),
-                        }
                         failure = f"⚠️ [{cfg.name}] Reservationens serverstatus stämmer inte: {exc}"
                         LOGGER.error(failure)
                         notify_discord(cfg.discord_webhook_url, failure)
@@ -826,20 +847,33 @@ def run_monitor(
                             cfg.discord_webhook_url,
                             f"⚠️ [{cfg.name}] Reservationen misslyckades: {exc}",
                         )
+                        emit("reservation_failed", {**popup_payload, "error": str(exc)})
                         continue
                     save_seen(seen_path, seen)
-                    popup_payload = {
-                        "date": occasion["date"],
-                        "time": str(occasion["time"])[:5],
-                        "location": occasion.get("locationName", "okänd plats"),
-                    }
                     if cfg.auto_book:
                         try:
+                            emit("booking", popup_payload)
                             booking_result = complete_invoice_booking(
                                 client, cfg, booking_session, bundle_reservation
                             )
                         except AuthenticationRequiredError:
                             raise
+                        except BookingConfirmationError as exc:
+                            failure = (
+                                f"⚠️ [{cfg.name}] Fakturabokningen returnerade ett boknings-ID "
+                                "men slutstatus kunde inte bekräftas. Betalningen upprepas inte."
+                            )
+                            LOGGER.error(failure)
+                            notify_discord(cfg.discord_webhook_url, failure)
+                            emit(
+                                "confirmation_required",
+                                {
+                                    **popup_payload,
+                                    "booking_id": exc.booking_id,
+                                    "error": str(exc),
+                                },
+                            )
+                            return
                         except BotError as exc:
                             failure = (
                                 f"⚠️ [{cfg.name}] Tiden reserverades men fakturabokningen "

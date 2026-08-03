@@ -40,7 +40,7 @@
       <header class="app-header">
         <strong>No-Comment-Booking</strong>
         <nav id="adminTopNav" class="admin-top-nav" hidden aria-label="Administration"><button class="active" data-admin-view="monitor">Bevakning</button><button data-admin-view="users">Användare</button></nav>
-        <div class="top-actions"><span id="connectionBadge" class="connection-badge reconnecting">Återansluter</span><span id="modeBadge" class="badge">LOCAL</span><span id="accountEmail"></span><button id="logoutButton" class="button ghost" hidden>Logga ut</button><button id="exitButton" class="button ghost">Stäng</button></div>
+        <div class="top-actions"><span id="statusBadge" class="badge">Redo</span><span id="connectionBadge" class="connection-badge reconnecting">Återansluter</span><span id="modeBadge" class="badge">LOCAL</span><span id="accountEmail"></span><button id="logoutButton" class="button ghost" hidden>Logga ut</button><button id="exitButton" class="button ghost">Stäng</button></div>
       </header>
 
       <main class="workspace">
@@ -65,7 +65,7 @@
           </form>
 
           <section id="activity" class="admin-events" hidden><div class="section-heading"><div><p class="eyebrow">Endast administratör</p><h2>Händelser i realtid</h2></div><button id="clearActivity" class="button ghost">Rensa visning</button></div><div id="activityList" class="activity-list"><div class="empty-state"><strong>Inga händelser ännu</strong></div></div></section>
-          <footer class="action-bar"><div><strong id="footerStatus">Redo</strong><small>Bevakningen körs automatiskt.</small></div><button id="stopButton" class="button danger" type="button" disabled>Stoppa bevakning</button></footer>
+          <footer class="action-bar"><div><strong id="footerStatus">Redo</strong><small id="footerDescription">Identifiera dig med BankID för att börja.</small></div><button id="stopButton" class="button danger" type="button" disabled>Stoppa bevakning</button></footer>
         </section>
 
         <section id="users" hidden><div class="section-heading"><div><p class="eyebrow">Administration</p><h1>Användare</h1></div><button id="createUser" class="button primary">Skapa användare</button></div><div class="panel policy-panel"><label class="check"><input id="discordDefault" type="checkbox" /><span>Ge nya användare Discord-alternativet</span></label><label class="check"><input id="discordApplyExisting" type="checkbox" /><span>Tillämpa även på befintliga användare</span></label><button id="saveDiscordPolicy" class="button secondary">Spara Discord-policy</button></div><form id="userSearchForm" class="admin-toolbar"><input id="userSearch" type="search" placeholder="Sök e-post eller namn" /><select id="userStatusFilter"><option value="">Alla statusar</option><option value="pending">Väntar</option><option value="active">Aktiv</option><option value="disabled">Avstängd</option></select><select id="userRoleFilter"><option value="">Alla roller</option><option value="user">Användare</option><option value="admin">Administratör</option></select><button class="button secondary">Sök</button><button id="refreshUsers" class="button ghost" type="button">Uppdatera</button></form><p id="userResultCount"></p><div id="userList" class="user-list"></div></section>

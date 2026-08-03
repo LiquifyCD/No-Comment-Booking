@@ -363,9 +363,13 @@ class MonitorTests(unittest.TestCase):
         client.create_reservation.assert_called_once()
         client.invoice_payment.assert_called_once()
         client.summary.assert_called_once_with("00000000-0000", "B1", 23)
-        events.assert_called_once_with(
-            "booked",
+        self.assertEqual(
+            ["match_found", "reserving", "booking", "booked"],
+            [call.args[0] for call in events.call_args_list],
+        )
+        self.assertEqual(
             {"date": "2026-08-03", "time": "09:00", "location": "Teststad", "booking_id": "B1"},
+            events.call_args.args[1],
         )
         self.assertEqual(2, notify.call_count)
 
@@ -410,8 +414,66 @@ class MonitorTests(unittest.TestCase):
                 event_callback=events,
             )
         client.invoice_payment.assert_not_called()
+        self.assertEqual(
+            ["match_found", "reserving", "booking_error"],
+            [call.args[0] for call in events.call_args_list],
+        )
         self.assertEqual("booking_error", events.call_args.args[0])
         self.assertIn("10:50", events.call_args.args[1]["error"])
+
+    def test_invoice_booking_never_retries_when_final_summary_is_unconfirmed(self):
+        client = Mock(spec=bot.TrafikverketClient)
+        client.invoice_payment.return_value = {"data": {"bookingId": "B-sensitive"}}
+        client.summary.return_value = {"data": {}}
+        with self.assertRaises(bot.BookingConfirmationError) as raised:
+            bot.complete_invoice_booking(
+                client,
+                config(auto_book=True),
+                {"session": "in-memory"},
+                {"reservation": "in-memory"},
+            )
+        self.assertEqual("B-sensitive", raised.exception.booking_id)
+        client.invoice_payment.assert_called_once()
+        client.summary.assert_called_once_with("00000000-0000", "B-sensitive", 23)
+
+    def test_reservation_failure_returns_status_to_monitoring_without_payment(self):
+        client = Mock(spec=bot.TrafikverketClient)
+        client.booking_hindrances.return_value = {"data": {"canBookLicence": True}}
+        client.occasion_bundles.return_value = {
+            "data": {
+                "bundles": [
+                    {
+                        "cost": 900,
+                        "occasions": [
+                            {
+                                "locationId": 10,
+                                "locationName": "Teststad",
+                                "date": "2026-08-03",
+                                "time": "09:00",
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        client.create_reservation.side_effect = bot.ApiResponseError("temporary failure")
+        events = Mock()
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "provtidsbevakaren.engine.notify_discord"
+        ):
+            bot.run_monitor(
+                config(auto_book=True),
+                client,
+                Path(directory) / "seen.json",
+                threading.Event(),
+                max_polls=1,
+                event_callback=events,
+            )
+        self.assertEqual(
+            ["match_found", "reserving", "reservation_failed"],
+            [call.args[0] for call in events.call_args_list],
+        )
+        client.invoice_payment.assert_not_called()
 
 
 if __name__ == "__main__":

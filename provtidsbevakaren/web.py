@@ -463,7 +463,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
                 elif time.monotonic() - last_send >= 15:
                     yield ": keepalive\n\n"
                     last_send = time.monotonic()
-                await asyncio.sleep(1 if snapshot["state"] == "authentication" else 2)
+                await asyncio.sleep(1 if snapshot["state"].startswith("bankid_") else 2)
 
         return StreamingResponse(
             snapshots(),
@@ -506,7 +506,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
                 elif time.monotonic() - last_send >= 15:
                     yield ": keepalive\n\n"
                     last_send = time.monotonic()
-                await asyncio.sleep(1 if snapshot["state"] == "authentication" else 3)
+                await asyncio.sleep(1 if snapshot["state"].startswith("bankid_") else 3)
 
         return StreamingResponse(
             snapshots(),
@@ -515,35 +515,39 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         )
 
     @app.post("/api/bankid/start")
-    async def start_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+    async def start_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, Any]:
+        job = registry.for_user(session.user_id)
         try:
-            registry.for_user(session.user_id).start_authentication()
+            job.start_authentication()
         except RuntimeConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"status": "starting"}
+        return job.status_snapshot()
 
     @app.post("/api/bankid/cancel")
-    async def cancel_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
-        registry.for_user(session.user_id).cancel_authentication()
-        return {"status": "cancelled"}
+    async def cancel_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, Any]:
+        job = registry.for_user(session.user_id)
+        job.cancel_authentication()
+        return job.status_snapshot()
 
     @app.post("/api/bankid/retry")
-    async def retry_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+    async def retry_bankid(session: UserSession = Depends(csrf_session)) -> dict[str, Any]:
+        job = registry.for_user(session.user_id)
         try:
-            registry.for_user(session.user_id).retry_authentication()
+            job.retry_authentication()
         except RuntimeConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"status": "starting"}
+        return job.status_snapshot()
 
     @app.post("/api/bankid/browser-fallback")
-    async def browser_fallback(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
+    async def browser_fallback(session: UserSession = Depends(csrf_session)) -> dict[str, Any]:
         if settings.is_server and not settings.has_remote_browser:
             raise HTTPException(
                 status_code=503,
                 detail="Browser fallback is not available on this server",
             )
-        registry.for_user(session.user_id).use_browser_fallback()
-        return {"status": "starting"}
+        job = registry.for_user(session.user_id)
+        job.use_browser_fallback()
+        return job.status_snapshot()
 
     @app.get("/api/bankid/qr.svg")
     async def bankid_qr(session: UserSession = Depends(current_session)) -> Response:
@@ -590,7 +594,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
     async def start_monitor(
         payload: MonitorConfigPayload,
         session: UserSession = Depends(csrf_session),
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         account = auth.account(session.user_id)
         raw_config = payload.model_dump()
         raw_config["poll_interval_seconds"] = 15
@@ -600,17 +604,19 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         ):
             raise HTTPException(status_code=403, detail="Discord-notiser är inte aktiverade för kontot.")
         try:
-            registry.for_user(session.user_id).start(raw_config)
+            job = registry.for_user(session.user_id)
+            job.start(raw_config)
         except engine.BotError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RuntimeConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"status": "starting"}
+        return job.status_snapshot()
 
     @app.post("/api/monitor/stop")
-    async def stop_monitor(session: UserSession = Depends(csrf_session)) -> dict[str, str]:
-        await asyncio.to_thread(registry.for_user(session.user_id).stop)
-        return {"status": "stopped"}
+    async def stop_monitor(session: UserSession = Depends(csrf_session)) -> dict[str, Any]:
+        job = registry.for_user(session.user_id)
+        await asyncio.to_thread(job.stop)
+        return job.status_snapshot()
 
     @app.post("/api/discord/test")
     async def discord_test(

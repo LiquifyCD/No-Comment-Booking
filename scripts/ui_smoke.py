@@ -124,6 +124,17 @@ def main() -> None:
             raise AssertionError("Booking choice did not update the selected action")
         if not desktop.execute_script("return monitorPayload().auto_book"):
             raise AssertionError("Booking choice was not included in the monitor payload")
+        status_labels = desktop.execute_script(
+            "renderStatus(clientStatus('monitoring'));"
+            "return ['statusBadge','statusTitle','metricEvent','footerStatus'].map(id=>document.getElementById(id).textContent);"
+        )
+        if len(set(status_labels)) != 1 or status_labels[0] != "Bevakning aktiv":
+            raise AssertionError(f"Status surfaces disagree: {status_labels}")
+        if desktop.find_element(By.ID, "stopButton").is_enabled() is False:
+            raise AssertionError("Stop must be enabled for the monitoring state")
+        desktop.execute_script("renderStatus(clientStatus('monitor_starting'))")
+        if desktop.find_element(By.ID, "startButton").is_enabled():
+            raise AssertionError("Start must be disabled while monitoring is starting")
         visible_text = desktop.find_element(By.TAG_NAME, "body").text.casefold()
         if "intervall" in visible_text or "15 sek" in visible_text:
             raise AssertionError("The fixed polling interval is still visible to the user")
