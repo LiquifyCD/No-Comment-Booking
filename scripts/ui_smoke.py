@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import time
 import uuid
 from pathlib import Path
 
 from selenium import webdriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as conditions
@@ -34,6 +36,16 @@ def assert_no_errors(driver: webdriver.Edge) -> None:
     ]
     if errors:
         raise AssertionError(f"Browser console errors: {errors}")
+
+
+def stable_click(driver: webdriver.Edge, locator: tuple[str, str]) -> None:
+    for _attempt in range(10):
+        try:
+            driver.find_element(*locator).click()
+            return
+        except StaleElementReferenceException:
+            time.sleep(0.1)
+    raise AssertionError(f"Element kept being replaced before click: {locator}")
 
 
 def main() -> None:
@@ -130,9 +142,8 @@ def main() -> None:
             card = wait.until(conditions.visibility_of_element_located((By.XPATH, card_xpath)))
             if email not in card.text:
                 raise AssertionError("Admin search returned the wrong account")
-            wait.until(
-                conditions.element_to_be_clickable((By.XPATH, f"{card_xpath}//button"))
-            ).click()
+            wait.until(conditions.element_to_be_clickable((By.XPATH, f"{card_xpath}//button")))
+            stable_click(desktop, (By.XPATH, f"{card_xpath}//button"))
             wait.until(conditions.visibility_of_element_located((By.ID, "userDialog")))
             name = desktop.find_element(By.CSS_SELECTOR, '#userForm input[name="display_name"]')
             name.clear()
@@ -148,9 +159,8 @@ def main() -> None:
             card = wait.until(conditions.visibility_of_element_located((By.XPATH, card_xpath)))
             if "Edited UI User" not in card.text or "active" not in card.text:
                 raise AssertionError("Admin edit was not reflected in the user list")
-            wait.until(
-                conditions.element_to_be_clickable((By.XPATH, f"{card_xpath}//button"))
-            ).click()
+            wait.until(conditions.element_to_be_clickable((By.XPATH, f"{card_xpath}//button")))
+            stable_click(desktop, (By.XPATH, f"{card_xpath}//button"))
             wait.until(conditions.visibility_of_element_located((By.ID, "userDialog")))
             desktop.find_element(By.ID, "deleteUser").click()
             wait.until(conditions.alert_is_present()).accept()
