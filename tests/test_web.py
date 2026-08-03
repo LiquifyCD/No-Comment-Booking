@@ -95,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.7.3"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.8.0"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -134,6 +134,7 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn("if (!from.value || from.value < today) from.value = today", script)
         self.assertIn('data-step="bankid"', page)
         self.assertIn('data-step="locations"', page)
+        self.assertIn('id="locationSearch" type="search"', page)
         self.assertIn('id="adminTopNav"', page)
         self.assertIn('name="vehicle_type_id" required disabled', page)
         self.assertIn('name="occasion_choice_id" required disabled', page)
@@ -147,6 +148,10 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn('.scan-summary{', styles)
         self.assertIn('["idle", "cancelled"].includes(bankId.state)', script)
         self.assertIn('bankId.state === "pending" && !$("#bankidDialog").open', script)
+        self.assertIn("const savedLicenceId = Number(state.savedConfig?.licence_id", script)
+        self.assertIn("!state.catalog.examinationTypes.length || !state.catalog.locations.length", script)
+        self.assertNotIn("examination_type_id.value || 1", script)
+        self.assertIn('return "Välj en provtyp."', script)
 
     def test_frontend_has_public_home_email_auth_and_password_reset_views(self):
         page = self.client.get("/static/index.html").text

@@ -87,6 +87,7 @@ Never commit the environment file. See [architecture](docs/ARCHITECTURE.md) and 
 - There is no standalone public reservation endpoint. Automatic booking is accepted only as an authenticated, CSRF-protected monitoring choice and uses the in-memory BankID session.
 - Duplicate BankID, catalog, and monitoring actions are guarded.
 - Failed catalog refreshes leave the last valid in-memory catalog intact.
+- A monitor can start only after the selected licence's current examination types and locations are loaded; the UI never substitutes a generic examination ID for a missing selection.
 - Missing fields and expired authentication produce explicit UI errors.
 - Live status uses one same-origin SSE connection, reconnects automatically, and falls back to a bounded snapshot request only while recovering. Event buffers retain at most 100 entries per active runtime.
 - An active monitor intent and its encrypted configuration survive service or server restarts. Because BankID sessions remain memory-only, the dashboard requests a fresh BankID login and then resumes the saved monitor automatically.

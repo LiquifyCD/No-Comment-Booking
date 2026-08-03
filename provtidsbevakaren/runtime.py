@@ -110,6 +110,7 @@ class MonitorJob:
         self._booking_lock = threading.Lock()
         self._catalog_lock = threading.Lock()
         self._catalog: catalog.BookingCatalog | None = None
+        self._catalog_licence_id = 0
         self._catalog_updated_at = 0.0
         self._translations: dict[str, str] | None = None
         self._resume_requested = bool(
@@ -471,6 +472,7 @@ class MonitorJob:
                         fresh.occasion_choices,
                     )
                 self._catalog = fresh
+                self._catalog_licence_id = licence_id
                 self._catalog_updated_at = time.time()
                 self._set_state("ready_to_start")
                 return {**fresh.as_dict(), "updatedAt": self._catalog_updated_at}
@@ -482,8 +484,15 @@ class MonitorJob:
 
     def _validate_catalog_config(self, config: engine.Config) -> None:
         current = self._catalog
-        if not current:
-            return
+        if (
+            not current
+            or self._catalog_licence_id != config.licence_id
+            or not current.examination_types
+            or not current.locations
+        ):
+            raise engine.BotError(
+                "Bokningsalternativen för vald behörighet är inte laddade. Hämta alternativen igen."
+            )
         checks = (
             (current.licences, config.licence_id, "behörighet"),
             (current.examination_types, config.examination_type_id, "provtyp"),

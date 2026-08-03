@@ -17,8 +17,8 @@ def config(**overrides):
         "licence_id": 23,
         "examination_type_id": 52,
         "location_id": 10,
-        "date_from": "2026-08-01",
-        "date_to": "2026-08-31",
+        "date_from": "2026-11-01",
+        "date_to": "2026-11-30",
         "earliest_time": "08:00",
         "latest_time": "17:00",
         "allowed_weekdays": [0, 1, 2, 3, 4],
@@ -52,11 +52,27 @@ class ConfigTests(unittest.TestCase):
 
 
 class FilterTests(unittest.TestCase):
+    def test_known_skovde_b96_slot_matches_selected_filters(self):
+        cfg = config(
+            location_id=1000130,
+            date_from="2026-08-30",
+            date_to="2026-12-31",
+            earliest_time="08:00",
+            latest_time="17:00",
+            allowed_weekdays=[0, 1, 2, 3, 4],
+        )
+        self.assertTrue(
+            bot.slot_matches_filters(
+                {"locationId": 1000130, "date": "2026-11-13", "time": "11:00"},
+                cfg,
+            )
+        )
+
     def test_filters_date_time_and_weekday(self):
         cfg = config()
-        self.assertTrue(bot.slot_matches_filters({"date": "2026-08-03", "time": "08:00:00"}, cfg))
-        self.assertFalse(bot.slot_matches_filters({"date": "2026-08-02", "time": "12:00"}, cfg))
-        self.assertFalse(bot.slot_matches_filters({"date": "2026-08-03", "time": "07:59"}, cfg))
+        self.assertTrue(bot.slot_matches_filters({"date": "2026-11-02", "time": "08:00:00"}, cfg))
+        self.assertFalse(bot.slot_matches_filters({"date": "2026-11-01", "time": "12:00"}, cfg))
+        self.assertFalse(bot.slot_matches_filters({"date": "2026-11-02", "time": "07:59"}, cfg))
 
     def test_extracts_every_occasion_in_bundle(self):
         result = {
@@ -65,8 +81,8 @@ class FilterTests(unittest.TestCase):
                     {
                         "cost": 100,
                         "occasions": [
-                            {"locationId": 1, "date": "2026-08-03", "time": "09:00"},
-                            {"locationId": 2, "date": "2026-08-04", "time": "10:00"},
+                            {"locationId": 1, "date": "2026-11-02", "time": "09:00"},
+                            {"locationId": 2, "date": "2026-11-03", "time": "10:00"},
                         ],
                     }
                 ]
@@ -290,7 +306,7 @@ class MonitorTests(unittest.TestCase):
                             {
                                 "locationId": 10,
                                 "locationName": "Teststad",
-                                "date": "2026-08-03",
+                                "date": "2026-11-03",
                                 "time": "09:00",
                             }
                         ],
@@ -327,7 +343,7 @@ class MonitorTests(unittest.TestCase):
                             {
                                 "locationId": 10,
                                 "locationName": "Teststad",
-                                "date": "2026-08-03",
+                                "date": "2026-11-03",
                                 "time": "09:00",
                             }
                         ],
@@ -337,7 +353,7 @@ class MonitorTests(unittest.TestCase):
         }
         client.create_reservation.return_value = {"data": {"success": True}}
         client.reservation_information.return_value = {
-            "data": {"reservations": [{"date": "2026-08-03", "time": "09:00", "locationId": 10}]}
+            "data": {"reservations": [{"date": "2026-11-03", "time": "09:00", "locationId": 10}]}
         }
         events = Mock()
         with (
@@ -357,7 +373,7 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual("reserved", events.call_args.args[0])
         event_payload = events.call_args.args[1]
         self.assertEqual(
-            {"date": "2026-08-03", "time": "09:00", "location": "Teststad"},
+            {"date": "2026-11-03", "time": "09:00", "location": "Teststad"},
             {key: value for key, value in event_payload.items() if not key.startswith("_")},
         )
         self.assertIn("_booking_session", event_payload)
@@ -377,7 +393,7 @@ class MonitorTests(unittest.TestCase):
                             {
                                 "locationId": 10,
                                 "locationName": "Teststad",
-                                "date": "2026-08-03",
+                                "date": "2026-11-03",
                                 "time": "09:00",
                             }
                         ],
@@ -387,7 +403,7 @@ class MonitorTests(unittest.TestCase):
         }
         client.create_reservation.return_value = {"data": {"success": True}}
         client.reservation_information.return_value = {
-            "data": {"reservations": [{"date": "2026-08-03", "time": "09:00", "locationId": 10}]}
+            "data": {"reservations": [{"date": "2026-11-03", "time": "09:00", "locationId": 10}]}
         }
         client.invoice_payment.return_value = {"data": {"bookingId": "B1"}}
         client.summary.return_value = {"data": {"confirmedExaminations": []}}
@@ -411,7 +427,7 @@ class MonitorTests(unittest.TestCase):
             [call.args[0] for call in events.call_args_list],
         )
         self.assertEqual(
-            {"date": "2026-08-03", "time": "09:00", "location": "Teststad", "booking_id": "B1"},
+            {"date": "2026-11-03", "time": "09:00", "location": "Teststad", "booking_id": "B1"},
             events.call_args.args[1],
         )
         self.assertEqual(2, notify.call_count)
@@ -491,7 +507,7 @@ class MonitorTests(unittest.TestCase):
                             {
                                 "locationId": 10,
                                 "locationName": "Teststad",
-                                "date": "2026-08-03",
+                                "date": "2026-11-03",
                                 "time": "09:00",
                             }
                         ],

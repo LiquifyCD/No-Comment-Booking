@@ -282,6 +282,7 @@ class CatalogTests(unittest.TestCase):
                 (CatalogItem(7, "Automat"),),
                 (CatalogItem(9, "Hyrbil"),),
             )
+            job._catalog_licence_id = 23
             with self.assertRaisesRegex(engine.BotError, "fordonstyp"):
                 job.start(
                     {
@@ -305,6 +306,7 @@ class CatalogTests(unittest.TestCase):
                 (CatalogItem(52, "Körprov"),),
                 (CatalogItem(1, "Alingsås"),),
             )
+            job._catalog_licence_id = 23
             with patch("threading.Thread.start"):
                 job.start(
                     {
@@ -326,6 +328,7 @@ class CatalogTests(unittest.TestCase):
                 (CatalogItem(52, "Körprov"),),
                 (CatalogItem(1, "Alingsås"),),
             )
+            job._catalog_licence_id = 23
             with self.assertRaisesRegex(engine.BotError, "behörighet"):
                 job.start(
                     {
@@ -336,6 +339,26 @@ class CatalogTests(unittest.TestCase):
                         "location_id": 1,
                     }
                 )
+            job.close()
+
+    def test_runtime_rejects_start_before_selected_licence_options_are_loaded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = VolatileStateStore()
+            job = MonitorJob("test", load_settings({}), store, Path(directory))
+            job._bankid._state = "complete"
+            job._bankid._personal_number = "20000101-1234"
+            job._catalog = BookingCatalog((CatalogItem(23, "B96"),), (), ())
+            job._catalog_licence_id = 0
+            with self.assertRaisesRegex(engine.BotError, "inte laddade"):
+                job.start(
+                    {
+                        "licence_id": 23,
+                        "examination_type_id": 1,
+                        "location_id": 1000130,
+                    }
+                )
+            self.assertIsNone(store.load_config("test"))
+            self.assertFalse(store.monitor_desired("test"))
             job.close()
 
     def test_retry_signals_the_existing_authentication_worker(self):
@@ -402,6 +425,7 @@ class CatalogTests(unittest.TestCase):
                 (CatalogItem(52, "Körprov"),),
                 (CatalogItem(1000130, "Skövde"),),
             )
+            job._catalog_licence_id = 23
             with (
                 patch.object(job, "refresh_catalog", return_value={}) as refresh,
                 patch("provtidsbevakaren.runtime.threading.Thread.start") as start,
@@ -515,7 +539,12 @@ class DateAndReservationTests(unittest.TestCase):
             job._bankid._state = "complete"
             job._status("BankID-inloggningen är klar.")
             self.assertEqual("bankid_connected", job.status_snapshot()["status"]["code"])
-            job._catalog = BookingCatalog((), (), ())
+            job._catalog = BookingCatalog(
+                (CatalogItem(23, "B96"),),
+                (CatalogItem(52, "Körprov"),),
+                (CatalogItem(10, "Teststad"),),
+            )
+            job._catalog_licence_id = 23
             job._set_state("ready_to_start")
             ready = job.status_snapshot()["status"]
             self.assertTrue(ready["canStart"])

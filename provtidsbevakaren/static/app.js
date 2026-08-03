@@ -255,7 +255,13 @@ async function loadInitialCatalog() {
       try { data = await api("/api/catalog"); break; } catch { await new Promise((resolve) => setTimeout(resolve, 1000)); }
     }
     if (!data) data = await api("/api/catalog/refresh", { method: "POST", body: JSON.stringify({ ssn: "", licence_id: 0 }) });
-    applyCatalog(data); $("#bankidDialog").open && $("#bankidDialog").close(); showStep("options");
+    applyCatalog(data);
+    const savedLicenceId = Number(state.savedConfig?.licence_id || form.elements.licence_id.value);
+    if (savedLicenceId && (!state.catalog.examinationTypes.length || !state.catalog.locations.length)) {
+      data = await api("/api/catalog/refresh", { method: "POST", body: JSON.stringify({ ssn: "", licence_id: savedLicenceId }) });
+      applyCatalog(data);
+    }
+    $("#bankidDialog").open && $("#bankidDialog").close(); showStep("options");
   } catch (error) { showStep("bankid"); toast(error.message); }
   finally { loadInitialCatalog.running = false; }
 }
@@ -300,7 +306,7 @@ async function bootstrap() {
   $("#discordPanel").hidden = !state.discordAllowed; $("#discordDefault").checked = !!data.discordDefaultForNewUsers;
   $("#accountEmail").textContent = data.account?.email || ""; $("#modeBadge").textContent = data.mode.toUpperCase();
   $("#logoutButton").hidden = data.mode !== "server"; $("#exitButton").hidden = data.mode === "server";
-  showView("app"); applySavedConfig(); updateStatus(data); if (data.catalogUpdatedAt) { try { applyCatalog(await api("/api/catalog")); renderMonitoringView(data); } catch {} }
+  showView("app"); applySavedConfig(); updateStatus(data); if (data.catalogUpdatedAt && !data.bankId?.authenticated) { try { applyCatalog(await api("/api/catalog")); renderMonitoringView(data); } catch {} }
   startLive();
 }
 
@@ -308,7 +314,7 @@ function monitorPayload() {
   const weekdays = $$('input[name="weekday"]:checked').map((node) => Number(node.value));
   return {
     name: "Min provtidsbevakning", ssn: "", licence_id: Number(form.elements.licence_id.value),
-    examination_type_id: Number(form.elements.examination_type_id.value || 1), location_id: state.selectedLocations[0],
+    examination_type_id: Number(form.elements.examination_type_id.value), location_id: state.selectedLocations[0],
     nearby_location_ids: state.selectedLocations.slice(1), vehicle_type_id: Number(form.elements.vehicle_type_id.value || 1),
     tachograph_type_id: 1, occasion_choice_id: Number(form.elements.occasion_choice_id.value || 1), language_id: 13,
     date_from: form.elements.date_from.value || null, date_to: form.elements.date_to.value || null,
@@ -319,8 +325,11 @@ function monitorPayload() {
 }
 
 function validateStep(step) {
-  if (step === "locations" && !Number(form.elements.licence_id.value)) return "Välj en behörighet.";
-  if (step === "schedule" && !state.selectedLocations.length) return "Välj minst en provort.";
+  const afterOptions = ["locations", "schedule", "notifications"].includes(step);
+  if (afterOptions && !Number(form.elements.licence_id.value)) return "Välj en behörighet.";
+  if (afterOptions && !state.catalog.examinationTypes.length) return "Hämta bokningsalternativen för vald behörighet igen.";
+  if (afterOptions && !Number(form.elements.examination_type_id.value)) return "Välj en provtyp.";
+  if (["schedule", "notifications"].includes(step) && !state.selectedLocations.length) return "Välj minst en provort.";
   if (step === "notifications" && !form.elements.date_from.value) return "Välj ett startdatum.";
   if (step === "notifications" && form.elements.date_from.value < form.elements.date_from.min) return "Från datum kan inte vara tidigare än idag.";
   return "";
