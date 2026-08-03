@@ -95,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.6.1"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.7.0"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -108,6 +108,7 @@ class LocalWebTests(unittest.TestCase):
         transport = self.client.get("/static/live-transport.js").text
         page = self.client.get("/static/index.html").text
         script = self.client.get("/static/app.js").text
+        styles = self.client.get("/static/styles.css").text
         self.assertIn('streamUrl: state.isAdmin ? "/api/live/stream" : "/api/status/stream"', script)
         self.assertIn('const base = this.options.snapshotUrl || "/api/live"', transport)
         self.assertNotIn("/api/events", transport)
@@ -128,7 +129,7 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn('id="footerDescription"', page)
         self.assertIn("function renderStatus(status, authoritative = true)", script)
         self.assertIn('["#statusBadge", "#statusTitle", "#metricEvent", "#footerStatus"]', script)
-        self.assertIn('renderStatus(clientStatus("monitor_starting"), false)', script)
+        self.assertIn('clientStatus("monitor_starting", "", { canStop: true })', script)
         self.assertIn("from.min = today", script)
         self.assertIn("if (!from.value || from.value < today) from.value = today", script)
         self.assertIn('data-step="bankid"', page)
@@ -137,10 +138,18 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn('name="vehicle_type_id" required disabled', page)
         self.assertIn('name="occasion_choice_id" required disabled', page)
         self.assertIn('name="name" type="hidden"', page)
+        self.assertIn('id="scanningView"', page)
+        self.assertIn('id="scanStopButton"', page)
+        self.assertIn('const SCANNING_STATES = new Set', script)
+        self.assertIn('form.hidden = scanning', script)
+        self.assertIn('$("#wizardProgress").hidden = scanning', script)
+        self.assertIn('Söker efter lediga ${licence', script)
+        self.assertIn('.scan-summary{', styles)
 
     def test_frontend_has_public_home_email_auth_and_password_reset_views(self):
         page = self.client.get("/static/index.html").text
         script = self.client.get("/static/app.js").text
+        styles = self.client.get("/static/styles.css").text
         self.assertIn('id="homeView"', page)
         self.assertIn('id="loginView"', page)
         self.assertIn('id="resetView"', page)
@@ -149,6 +158,7 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn("/api/auth/reset-password", script)
         self.assertIn("/api/admin/users", script)
         self.assertIn('response.status === 401 && url !== "/api/auth/login"', script)
+        self.assertIn('.auth-card>#showRegister{margin-top:18px}', styles)
 
     def test_bootstrap_never_returns_saved_identity_or_discord_secret(self):
         self.login()

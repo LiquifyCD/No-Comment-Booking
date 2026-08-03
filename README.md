@@ -89,6 +89,8 @@ Never commit the environment file. See [architecture](docs/ARCHITECTURE.md) and 
 - Failed catalog refreshes leave the last valid in-memory catalog intact.
 - Missing fields and expired authentication produce explicit UI errors.
 - Live status uses one same-origin SSE connection, reconnects automatically, and falls back to a bounded snapshot request only while recovering. Event buffers retain at most 100 entries per active runtime.
+- An active monitor intent and its encrypted configuration survive service or server restarts. Because BankID sessions remain memory-only, the dashboard requests a fresh BankID login and then resumes the saved monitor automatically.
+- While monitoring or booking is active, the setup wizard is replaced by a read-only scanning view; stopping restores the saved choices.
 - Logs and public API state exclude identity numbers, cookies, webhook URLs, and BankID challenge secrets.
 
 No-Comment-Booking is not an official Trafikverket service.

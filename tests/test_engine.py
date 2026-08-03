@@ -235,6 +235,49 @@ class BrowserTests(unittest.TestCase):
 
 
 class MonitorTests(unittest.TestCase):
+    def test_booking_hindrance_blocks_autobook_before_slot_search(self):
+        client = Mock(spec=bot.TrafikverketClient)
+        client.booking_hindrances.return_value = {
+            "data": {
+                "canBookLicence": False,
+                "hindranceMessages": ["Befintlig bokning för 20000101-1234"],
+            }
+        }
+        events = Mock()
+        with tempfile.TemporaryDirectory() as directory, self.assertRaises(
+            bot.BookingHindranceError
+        ):
+            bot.run_monitor(
+                config(auto_book=True),
+                client,
+                Path(directory) / "seen.json",
+                threading.Event(),
+                max_polls=1,
+                event_callback=events,
+            )
+        client.occasion_bundles.assert_not_called()
+        self.assertEqual("booking_hindrance", events.call_args.args[0])
+        self.assertNotIn("20000101-1234", repr(events.call_args.args[1]))
+
+    def test_booking_hindrance_allows_safe_notification_only_scan(self):
+        client = Mock(spec=bot.TrafikverketClient)
+        client.booking_hindrances.return_value = {
+            "data": {"canBookLicence": False, "hindranceMessages": "Befintlig bokning"}
+        }
+        client.occasion_bundles.return_value = {"data": {"bundles": []}}
+        events = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            bot.run_monitor(
+                config(auto_book=False),
+                client,
+                Path(directory) / "seen.json",
+                threading.Event(),
+                max_polls=1,
+                event_callback=events,
+            )
+        client.occasion_bundles.assert_called_once()
+        self.assertEqual("booking_hindrance", events.call_args_list[0].args[0])
+
     def test_notifies_new_slot_once(self):
         client = Mock(spec=bot.TrafikverketClient)
         client.booking_hindrances.return_value = {"data": {"canBookLicence": True}}

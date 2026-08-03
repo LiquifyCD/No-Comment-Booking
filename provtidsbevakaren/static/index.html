@@ -48,7 +48,7 @@
           <div class="hero-card compact"><div><p class="eyebrow light">Aktuell status</p><h1 id="statusTitle">Redo att starta</h1><p id="statusDescription">Identifiera dig med BankID för att börja.</p></div><div class="status-orbit"><span id="statusDot"></span></div></div>
           <div class="metric-grid"><article class="metric"><span>Åtgärd</span><strong id="metricMode">Notifiering</strong><small id="metricModeDescription">Du bokar själv</small></article><article class="metric"><span>Status</span><strong id="metricEvent">Redo</strong><small id="metricEventTime">Väntar på start</small></article></div>
 
-          <ol class="wizard-progress" aria-label="Bevakningssteg"><li class="active" data-progress="bankid">1. BankID</li><li data-progress="options">2. Alternativ</li><li data-progress="locations">3. Orter</li><li data-progress="schedule">4. Datum och tid</li><li data-progress="notifications">5. Notifiering</li></ol>
+          <ol id="wizardProgress" class="wizard-progress" aria-label="Bevakningssteg"><li class="active" data-progress="bankid">1. BankID</li><li data-progress="options">2. Alternativ</li><li data-progress="locations">3. Orter</li><li data-progress="schedule">4. Datum och tid</li><li data-progress="notifications">5. Notifiering</li></ol>
           <form id="monitorForm" novalidate>
             <section class="wizard-step" data-step="bankid"><p class="eyebrow">Steg 1</p><h2>Logga in med BankID</h2><p>Din identitet används endast för att hämta dina personliga bokningsalternativ.</p><button id="bankidButton" class="button primary" type="button">Anslut Mobilt BankID</button><span id="bankidSummary" class="muted">Inte anslutet</span><input name="name" type="hidden" /><input name="ssn" type="hidden" /></section>
 
@@ -63,6 +63,20 @@
             <section class="wizard-step" data-step="notifications" hidden><p class="eyebrow">Steg 5</p><h2>Åtgärd vid träff</h2><div class="mode-options" role="radiogroup" aria-label="Åtgärd vid träff"><label class="mode-card selected"><input type="radio" name="action_mode" value="notify" checked /><span><strong>Notifiera mig</strong><small>Bevakningen meddelar dig. Du bokar själv hos Trafikverket.</small></span></label><label class="mode-card"><input type="radio" name="action_mode" value="book" /><span><strong>Boka åt mig</strong><small>En passande tid bokas automatiskt med Pay later/faktura.</small></span></label></div><div id="discordPanel" class="notification-panel" hidden><h3>Discord</h3><p>Skicka träffar till en privat kanal.</p><div class="inline-field"><label>Webhook URL<input name="discord_webhook_url" type="url" autocomplete="off" /></label><button id="discordButton" class="button secondary" type="button">Testa</button></div></div><p id="notificationInfo" class="muted">Webbnotifieringar kan visas medan sidan är öppen.</p><div class="wizard-actions"><button class="button ghost" type="button" data-back="schedule">Tillbaka</button><button id="startButton" class="button primary" type="submit">Starta bevakning</button></div></section>
             <input name="tachograph_type_id" type="hidden" value="1" /><input name="language_id" type="hidden" value="13" />
           </form>
+
+          <section id="scanningView" class="scanning-view" hidden aria-live="polite">
+            <div class="scanner-visual" aria-hidden="true"><span></span><span></span><span></span></div>
+            <p class="eyebrow">Aktiv bevakning</p>
+            <h2 id="scanningTitle">Söker efter lediga tider</h2>
+            <p id="scanningDescription">Bevakningen körs på Frostbyte.</p>
+            <dl class="scan-summary">
+              <div><dt>Behörighet</dt><dd id="scanningLicence">–</dd></div>
+              <div><dt>Datum och tid</dt><dd id="scanningSchedule">–</dd></div>
+              <div><dt>Orter</dt><dd id="scanningLocations">–</dd></div>
+              <div><dt>Åtgärd</dt><dd id="scanningMode">–</dd></div>
+            </dl>
+            <button id="scanStopButton" class="button danger" type="button">Stoppa bevakning</button>
+          </section>
 
           <section id="activity" class="admin-events" hidden><div class="section-heading"><div><p class="eyebrow">Endast administratör</p><h2>Händelser i realtid</h2></div><button id="clearActivity" class="button ghost">Rensa visning</button></div><div id="activityList" class="activity-list"><div class="empty-state"><strong>Inga händelser ännu</strong></div></div></section>
           <footer class="action-bar"><div><strong id="footerStatus">Redo</strong><small id="footerDescription">Identifiera dig med BankID för att börja.</small></div><button id="stopButton" class="button danger" type="button" disabled>Stoppa bevakning</button></footer>

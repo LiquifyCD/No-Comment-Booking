@@ -116,8 +116,11 @@ class StorageTests(unittest.TestCase):
     def test_volatile_store_clears_values(self):
         store = VolatileStateStore()
         store.save_config("u", {"ssn": "00000000-0000"})
+        store.set_monitor_desired("u", True)
+        self.assertTrue(store.monitor_desired("u"))
         store.close()
         self.assertIsNone(store.load_config("u"))
+        self.assertFalse(store.monitor_desired("u"))
 
     def test_sqlite_store_encrypts_sensitive_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -128,11 +131,18 @@ class StorageTests(unittest.TestCase):
                 "discord_webhook_url": "https://discord.invalid/secret",
             }
             store.save_config("user", value)
+            store.set_monitor_desired("user", True)
             self.assertEqual(value, store.load_config("user"))
+            self.assertTrue(store.monitor_desired("user"))
             store.close()
             raw = path.read_bytes()
             self.assertNotIn(b"00000000-0000", raw)
             self.assertNotIn(b"discord.invalid", raw)
+            reopened = EncryptedSqliteStateStore(path, Fernet.generate_key().decode())
+            self.assertTrue(reopened.monitor_desired("user"))
+            reopened.set_monitor_desired("user", False)
+            self.assertFalse(reopened.monitor_desired("user"))
+            reopened.close()
 
     def test_legacy_accounts_migrate_atomically_to_email_and_keep_internal_id(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -7,8 +7,12 @@ const state = {
   csrf: "", isAdmin: false, discordAllowed: false, cursor: 0,
   catalog: { licences: [], examinationTypes: [], locations: [], vehicleTypes: [], occasionChoices: [] },
   selectedLocations: [], currentStep: "bankid", users: [], live: null,
-  status: null, authoritativeStatus: null,
+  status: null, authoritativeStatus: null, snapshot: null, savedConfig: null,
 };
+
+const SCANNING_STATES = new Set([
+  "monitor_starting", "monitoring", "match_found", "reserving", "booking", "booked",
+]);
 
 const STATUS_FALLBACKS = {
   ready: ["Redo", "Identifiera dig med BankID för att börja."],
@@ -137,7 +141,60 @@ function applyCatalog(data) {
   setOptions(form.elements.examination_type_id, state.catalog.examinationTypes, "Välj provtyp");
   setOptions(form.elements.vehicle_type_id, state.catalog.vehicleTypes, "Välj växellåda / fordon");
   setOptions(form.elements.occasion_choice_id, state.catalog.occasionChoices, "Välj hyrbilsalternativ");
+  applySavedConfig();
   renderLocations();
+}
+
+function applySavedConfig() {
+  const config = state.savedConfig;
+  if (!config) return;
+  ["licence_id", "examination_type_id", "vehicle_type_id", "occasion_choice_id"].forEach((name) => {
+    if (config[name] != null && [...form.elements[name].options].some((option) => Number(option.value) === Number(config[name]))) {
+      form.elements[name].value = String(config[name]);
+    }
+  });
+  ["date_from", "date_to", "earliest_time", "latest_time"].forEach((name) => {
+    if (config[name]) form.elements[name].value = config[name];
+  });
+  if (Array.isArray(config.allowed_weekdays)) {
+    $$('input[name="weekday"]').forEach((node) => { node.checked = config.allowed_weekdays.includes(Number(node.value)); });
+  }
+  if (config.location_id) {
+    state.selectedLocations = [config.location_id, ...(config.nearby_location_ids || [])]
+      .map(Number).filter((id, index, values) => id && values.indexOf(id) === index).slice(0, 4);
+  }
+  const mode = config.auto_book ? "book" : "notify";
+  const radio = form.querySelector(`input[name="action_mode"][value="${mode}"]`);
+  if (radio) { radio.checked = true; radio.dispatchEvent(new Event("change")); }
+}
+
+function itemName(values, id) {
+  return values.find((item) => Number(item.id) === Number(id))?.name || (id ? String(id) : "–");
+}
+
+function renderMonitoringView(snapshot) {
+  const status = statusFromSnapshot(snapshot);
+  const scanning = SCANNING_STATES.has(status.code);
+  $("#wizardProgress").hidden = scanning;
+  form.hidden = scanning;
+  $("#scanningView").hidden = !scanning;
+  if (!scanning) {
+    if (snapshot.resumePending) showStep("bankid");
+    return;
+  }
+  const config = state.savedConfig || {};
+  const licence = itemName(state.catalog.licences, config.licence_id);
+  $("#scanningTitle").textContent = status.code === "booked" ? "Bokningen är klar" : `Söker efter lediga ${licence === "–" ? "" : `${licence}-`}tider`;
+  $("#scanningDescription").textContent = status.description;
+  $("#scanningLicence").textContent = licence;
+  const dates = [config.date_from, config.date_to].filter(Boolean).join(" – ") || "Alla datum";
+  const times = [config.earliest_time, config.latest_time].filter(Boolean).join(" – ") || "Alla tider";
+  $("#scanningSchedule").textContent = `${dates}, ${times}`;
+  const locationIds = [config.location_id, ...(config.nearby_location_ids || [])].filter(Boolean);
+  $("#scanningLocations").textContent = locationIds.map((id) => itemName(state.catalog.locations, id)).join(", ") || "–";
+  $("#scanningMode").textContent = config.auto_book ? "Boka åt mig" : "Notifiering";
+  $("#scanStopButton").hidden = status.code === "booked";
+  $("#scanStopButton").disabled = !status.canStop;
 }
 
 function renderLocations() {
@@ -174,6 +231,7 @@ async function loadLicenceOptions() {
 }
 
 function updateStatus(snapshot) {
+  state.snapshot = snapshot;
   renderStatus(statusFromSnapshot(snapshot));
   const bankId = snapshot.bankId || {};
   $("#bankidSummary").textContent = bankId.authenticated ? "BankID anslutet" : bankId.state === "pending" ? "Väntar på BankID" : "Inte anslutet";
@@ -184,6 +242,7 @@ function updateStatus(snapshot) {
   if (bankId.state === "pending") $("#bankidQr").src = `/api/bankid/qr.svg?v=${bankId.qrVersion || Date.now()}`;
   if (bankId.authenticated && ["bankid", "loading"].includes(state.currentStep)) loadInitialCatalog();
   if (snapshot.events) renderEvents(snapshot.events);
+  renderMonitoringView(snapshot);
 }
 
 async function loadInitialCatalog() {
@@ -234,12 +293,12 @@ function startLive() {
 
 async function bootstrap() {
   const data = await api("/api/bootstrap");
-  state.csrf = data.csrfToken; state.isAdmin = data.isAdmin; state.discordAllowed = data.discordAllowed;
+  state.csrf = data.csrfToken; state.isAdmin = data.isAdmin; state.discordAllowed = data.discordAllowed; state.savedConfig = data.config || null;
   $("#adminTopNav").hidden = !state.isAdmin; $("#activity").hidden = !state.isAdmin;
   $("#discordPanel").hidden = !state.discordAllowed; $("#discordDefault").checked = !!data.discordDefaultForNewUsers;
   $("#accountEmail").textContent = data.account?.email || ""; $("#modeBadge").textContent = data.mode.toUpperCase();
   $("#logoutButton").hidden = data.mode !== "server"; $("#exitButton").hidden = data.mode === "server";
-  showView("app"); updateStatus(data); if (data.catalogUpdatedAt) { try { applyCatalog(await api("/api/catalog")); } catch {} }
+  showView("app"); applySavedConfig(); updateStatus(data); if (data.catalogUpdatedAt) { try { applyCatalog(await api("/api/catalog")); renderMonitoringView(data); } catch {} }
   startLive();
 }
 
@@ -321,8 +380,21 @@ $$('input[name="action_mode"]').forEach((input) => input.addEventListener("chang
 }));
 $$('[data-next]').forEach((button) => button.addEventListener("click", () => { const error = validateStep(button.dataset.next); error ? toast(error) : showStep(button.dataset.next); }));
 $$('[data-back]').forEach((button) => button.addEventListener("click", () => showStep(button.dataset.back)));
-form.addEventListener("submit", async (event) => { event.preventDefault(); const error = validateStep("notifications"); if (error) return toast(error); renderStatus(clientStatus("monitor_starting"), false); try { updateStatus(await api("/api/monitor/start", { method: "POST", body: JSON.stringify(monitorPayload()) })); toast("Bevakningen startar."); } catch (err) { renderStatus(clientStatus("error", err.message, { canStart: true })); toast(err.message); } });
-$("#stopButton").addEventListener("click", async () => { renderStatus(clientStatus("stopping"), false); try { updateStatus(await api("/api/monitor/stop", { method: "POST", body: "{}" })); toast("Bevakningen är stoppad."); } catch (error) { renderStatus(clientStatus("error", error.message)); toast(error.message); } });
+form.addEventListener("submit", async (event) => {
+  event.preventDefault(); const error = validateStep("notifications"); if (error) return toast(error);
+  const payload = monitorPayload(); state.savedConfig = payload;
+  const starting = { ...state.snapshot, status: clientStatus("monitor_starting", "", { canStop: true }) };
+  updateStatus(starting);
+  try { updateStatus(await api("/api/monitor/start", { method: "POST", body: JSON.stringify(payload) })); toast("Bevakningen startar."); }
+  catch (err) { const failed = { ...state.snapshot, status: clientStatus("error", err.message, { canStart: true }) }; updateStatus(failed); toast(err.message); }
+});
+async function stopMonitoring() {
+  renderStatus(clientStatus("stopping"), false);
+  try { updateStatus(await api("/api/monitor/stop", { method: "POST", body: "{}" })); toast("Bevakningen är stoppad."); }
+  catch (error) { renderStatus(clientStatus("error", error.message)); toast(error.message); }
+}
+$("#stopButton").addEventListener("click", stopMonitoring);
+$("#scanStopButton").addEventListener("click", stopMonitoring);
 $("#discordButton").addEventListener("click", async () => { const url = form.elements.discord_webhook_url.value.trim(); try { await api("/api/discord/test", { method: "POST", body: JSON.stringify({ name: "Min provtidsbevakning", discord_webhook_url: url }) }); toast("Discord-test skickat."); } catch (error) { toast(error.message); } });
 $("#clearActivity").addEventListener("click", () => $("#activityList").innerHTML = '<div class="empty-state"><strong>Inga händelser ännu</strong></div>');
 

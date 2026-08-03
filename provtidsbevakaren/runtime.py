@@ -112,6 +112,19 @@ class MonitorJob:
         self._catalog: catalog.BookingCatalog | None = None
         self._catalog_updated_at = 0.0
         self._translations: dict[str, str] | None = None
+        self._resume_requested = bool(
+            self.state_store.monitor_desired(self.user_id)
+            and self.state_store.load_config(self.user_id)
+        )
+        if self._resume_requested:
+            self._set_state(
+                "action_required",
+                "Bevakningen pausades vid serveromstart. Anslut BankID för att återuppta den.",
+            )
+            self.events.add(
+                "recovery_required",
+                "Den sparade bevakningen väntar på ny BankID-inloggning efter serveromstart.",
+            )
 
     @property
     def state(self) -> str:
@@ -144,10 +157,12 @@ class MonitorJob:
             "canStart": bool(
                 code in STARTABLE_STATES and bankid_snapshot["authenticated"] and catalog_ready
             ),
-            "canStop": code in STOPPABLE_STATES,
+            "canStop": bool(code in STOPPABLE_STATES or self._resume_requested),
             "canAuthenticate": bool(
-                code in AUTHENTICATABLE_STATES and not bankid_snapshot["authenticated"]
+                (code in AUTHENTICATABLE_STATES or self._resume_requested)
+                and not bankid_snapshot["authenticated"]
             ),
+            "resumePending": self._resume_requested,
         }
 
     def snapshot(self, after: int = 0) -> dict[str, Any]:
@@ -162,6 +177,7 @@ class MonitorJob:
             "bankId": self._bankid.snapshot(),
             "reservation": reservation,
             "catalogUpdatedAt": self._catalog_updated_at,
+            "resumePending": self._resume_requested,
         }
 
     def status_snapshot(self) -> dict[str, Any]:
@@ -172,6 +188,7 @@ class MonitorJob:
             "status": status,
             "bankId": self._bankid.snapshot(),
             "catalogUpdatedAt": self._catalog_updated_at,
+            "resumePending": self._resume_requested,
         }
 
     def start(self, raw_config: dict[str, Any]) -> None:
@@ -195,7 +212,11 @@ class MonitorJob:
         with self._lock:
             if (self._thread and self._thread.is_alive()) or self._pending_booking:
                 raise RuntimeConflict("En bevakning körs redan för användaren")
-            if self._auth_thread and self._auth_thread.is_alive():
+            if (
+                self._auth_thread
+                and self._auth_thread.is_alive()
+                and self._auth_thread is not threading.current_thread()
+            ):
                 raise RuntimeConflict("Vänta tills BankID-inloggningen är klar.")
             self._validate_catalog_config(config)
             self._stop_event = threading.Event()
@@ -208,6 +229,8 @@ class MonitorJob:
                     f"Från datum flyttades automatiskt till dagens datum ({config.date_from}).",
                 )
             self.state_store.save_config(self.user_id, dataclasses.asdict(config))
+            self.state_store.set_monitor_desired(self.user_id, True)
+            self._resume_requested = False
             self._thread = threading.Thread(
                 target=self._run,
                 args=(config,),
@@ -366,6 +389,19 @@ class MonitorJob:
         try:
             self.refresh_catalog("", 0)
             self.events.add("catalog", "Tillgängliga behörigheter har hämtats automatiskt.")
+            if self._resume_requested:
+                saved = self.state_store.load_config(self.user_id)
+                if not saved:
+                    self.state_store.set_monitor_desired(self.user_id, False)
+                    self._resume_requested = False
+                    raise RuntimeConflict("Den sparade bevakningskonfigurationen saknas.")
+                self._set_state("reconnecting", "Den sparade bevakningen återställs.")
+                self.refresh_catalog("", int(saved.get("licence_id") or 0))
+                self.events.add(
+                    "recovered",
+                    "BankID är anslutet och den sparade bevakningen återupptas.",
+                )
+                self.start({**saved, "ssn": ""})
         except (engine.BotError, RuntimeConflict) as exc:
             self._set_state("action_required", f"Bokningsalternativen kunde inte hämtas: {exc}")
             self.events.add(
@@ -514,6 +550,7 @@ class MonitorJob:
                 self._pending_booking = None
                 self._pending_done.set()
             self._set_state("booked")
+            self.state_store.set_monitor_desired(self.user_id, False)
             self.events.add("booked", "Tiden är bokad med Pay later/faktura.", display)
             engine.notify_discord(
                 pending["config"].discord_webhook_url,
@@ -571,6 +608,11 @@ class MonitorJob:
             "booking": "Tiden bokas med Pay later/faktura.",
             "reservation_failed": "Reservationen misslyckades. Bevakningen fortsätter.",
             "confirmation_required": "Bokningen fick ett boknings-ID men slutstatus måste kontrolleras manuellt.",
+            "booking_hindrance": (
+                "Trafikverket tillåter inte autobokning för den valda behörigheten."
+                if config.auto_book
+                else "Ett bokningshinder finns, men notifieringsbevakningen fortsätter."
+            ),
             "reserved": "Tiden är reserverad. Slutför bokningen innan reservationen löper ut.",
             "booked": "Tiden är bokad med Pay later/faktura.",
             "booking_error": "Automatisk bokning misslyckades. Reservationen kan slutföras i webbläsaren.",
@@ -584,9 +626,14 @@ class MonitorJob:
             "booked": "booked",
             "booking_error": "action_required" if self._pending_booking else "error",
             "confirmation_required": "action_required",
+            "booking_hindrance": "action_required" if config.auto_book else "monitoring",
         }
         if kind in state_by_event:
             self._set_state(state_by_event[kind], messages.get(kind, kind))
+        if kind in {"booked", "booking_error", "confirmation_required"} or (
+            kind == "booking_hindrance" and config.auto_book
+        ):
+            self.state_store.set_monitor_desired(self.user_id, False)
         self.events.add(kind, messages.get(kind, kind), public_payload)
 
     def _run(self, config: engine.Config) -> None:
@@ -630,12 +677,17 @@ class MonitorJob:
                 while not self._stop_event.wait(0.5) and not self._pending_done.is_set():
                     if self._browser_session and not self._browser_session.is_alive():
                         break
+        except engine.BookingHindranceError as exc:
+            self.state_store.set_monitor_desired(self.user_id, False)
+            self._set_state("action_required", str(exc))
         except engine.BotError as exc:
             if not self._stop_event.is_set():
+                self.state_store.set_monitor_desired(self.user_id, False)
                 self.events.add("error", str(exc))
                 self._set_state("error", str(exc))
         except Exception:
             LOGGER.exception("Unexpected monitor failure")
+            self.state_store.set_monitor_desired(self.user_id, False)
             self.events.add("error", "Ett oväntat internt fel stoppade bevakningen.")
             self._set_state("error", "Ett oväntat internt fel stoppade bevakningen.")
         finally:
@@ -650,7 +702,10 @@ class MonitorJob:
                 else:
                     self._set_state("ready_to_start")
 
-    def stop(self) -> None:
+    def stop(self, *, persist: bool = True) -> None:
+        if persist:
+            self.state_store.set_monitor_desired(self.user_id, False)
+            self._resume_requested = False
         with self._lock:
             thread = self._thread
             auth_thread = self._auth_thread
@@ -674,8 +729,8 @@ class MonitorJob:
         if not (thread and thread.is_alive()) and not (auth_thread and auth_thread.is_alive()):
             self._set_state("stopped")
 
-    def close(self) -> None:
-        self.stop()
+    def close(self, *, preserve_intent: bool = False) -> None:
+        self.stop(persist=not preserve_intent)
         if self._browser_session:
             self._browser_session.close()
             self._browser_session = None
@@ -711,5 +766,5 @@ class RuntimeRegistry:
             jobs = list(self._jobs.values())
             self._jobs.clear()
         for job in jobs:
-            job.close()
+            job.close(preserve_intent=True)
         self.state_store.close()

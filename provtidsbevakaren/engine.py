@@ -53,6 +53,10 @@ class ApiResponseError(BotError):
     pass
 
 
+class BookingHindranceError(BotError):
+    pass
+
+
 class ReservationStateError(ApiResponseError):
     pass
 
@@ -798,7 +802,18 @@ def run_monitor(
     client.initialize()
     hindrances = nested(client.booking_hindrances(booking_session), "data")
     if isinstance(hindrances, dict) and hindrances.get("canBookLicence") is False:
-        LOGGER.warning("Bokningshinder: %s", hindrances.get("hindranceMessages", "okänt hinder"))
+        raw_hindrance = hindrances.get("hindranceMessages", "okänt hinder")
+        if isinstance(raw_hindrance, list):
+            raw_hindrance = "; ".join(str(item) for item in raw_hindrance)
+        hindrance = re.sub(
+            r"(?<!\d)\d{8}-?\d{4}(?!\d)", "[personnummer dolt]", str(raw_hindrance)
+        )[:300]
+        LOGGER.warning("Bokningshinder: %s", hindrance)
+        emit("booking_hindrance", {"error": hindrance})
+        if cfg.auto_book:
+            raise BookingHindranceError(
+                f"Trafikverket tillåter inte autobokning för behörigheten: {hindrance}"
+            )
 
     LOGGER.info(
         "[%s] Bevakning startad, intervall %.0f sekunder", cfg.name, cfg.poll_interval_seconds

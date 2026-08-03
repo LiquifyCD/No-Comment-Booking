@@ -12,6 +12,8 @@ from cryptography.fernet import Fernet, InvalidToken
 class StateStore(Protocol):
     def save_config(self, user_id: str, value: dict[str, Any]) -> None: ...
     def load_config(self, user_id: str) -> dict[str, Any] | None: ...
+    def set_monitor_desired(self, user_id: str, active: bool) -> None: ...
+    def monitor_desired(self, user_id: str) -> bool: ...
     def delete_config(self, user_id: str) -> None: ...
     def close(self) -> None: ...
 
@@ -19,6 +21,7 @@ class StateStore(Protocol):
 class VolatileStateStore:
     def __init__(self):
         self._values: dict[str, dict[str, Any]] = {}
+        self._monitor_intents: dict[str, bool] = {}
         self._lock = threading.RLock()
 
     def save_config(self, user_id: str, value: dict[str, Any]) -> None:
@@ -30,13 +33,23 @@ class VolatileStateStore:
             value = self._values.get(user_id)
             return dict(value) if value else None
 
+    def set_monitor_desired(self, user_id: str, active: bool) -> None:
+        with self._lock:
+            self._monitor_intents[user_id] = bool(active)
+
+    def monitor_desired(self, user_id: str) -> bool:
+        with self._lock:
+            return bool(self._monitor_intents.get(user_id, False))
+
     def delete_config(self, user_id: str) -> None:
         with self._lock:
             self._values.pop(user_id, None)
+            self._monitor_intents.pop(user_id, None)
 
     def close(self) -> None:
         with self._lock:
             self._values.clear()
+            self._monitor_intents.clear()
 
 
 class EncryptedSqliteStateStore:
@@ -54,6 +67,11 @@ class EncryptedSqliteStateStore:
             self._connection.execute(
                 "CREATE TABLE IF NOT EXISTS user_state ("
                 "user_id TEXT PRIMARY KEY, encrypted_config BLOB NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            )
+            self._connection.execute(
+                "CREATE TABLE IF NOT EXISTS monitor_intent ("
+                "user_id TEXT PRIMARY KEY, desired_active INTEGER NOT NULL DEFAULT 0, "
+                "updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
             )
 
     def save_config(self, user_id: str, value: dict[str, Any]) -> None:
@@ -78,9 +96,26 @@ class EncryptedSqliteStateStore:
             raise RuntimeError("Stored configuration could not be decrypted") from exc
         return value if isinstance(value, dict) else None
 
+    def set_monitor_desired(self, user_id: str, active: bool) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT INTO monitor_intent(user_id, desired_active) VALUES(?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET "
+                "desired_active=excluded.desired_active, updated_at=CURRENT_TIMESTAMP",
+                (user_id, int(bool(active))),
+            )
+
+    def monitor_desired(self, user_id: str) -> bool:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT desired_active FROM monitor_intent WHERE user_id=?", (user_id,)
+            ).fetchone()
+        return bool(row and row[0])
+
     def delete_config(self, user_id: str) -> None:
         with self._lock, self._connection:
             self._connection.execute("DELETE FROM user_state WHERE user_id=?", (user_id,))
+            self._connection.execute("DELETE FROM monitor_intent WHERE user_id=?", (user_id,))
 
     def close(self) -> None:
         with self._lock:

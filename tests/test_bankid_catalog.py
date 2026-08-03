@@ -349,6 +349,70 @@ class CatalogTests(unittest.TestCase):
             job._auth_thread.is_alive.return_value = False
             job.close()
 
+    def test_active_monitor_intent_survives_shutdown_and_requires_fresh_bankid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = VolatileStateStore()
+            store.save_config(
+                "test",
+                {
+                    "name": "B96",
+                    "ssn": "20000101-1234",
+                    "licence_id": 23,
+                    "examination_type_id": 52,
+                    "location_id": 1000130,
+                    "auto_book": True,
+                },
+            )
+            store.set_monitor_desired("test", True)
+            job = MonitorJob("test", load_settings({}), store, Path(directory))
+            snapshot = job.status_snapshot()
+            self.assertEqual("action_required", snapshot["status"]["code"])
+            self.assertTrue(snapshot["resumePending"])
+            self.assertTrue(snapshot["status"]["canAuthenticate"])
+            self.assertTrue(snapshot["status"]["canStop"])
+            job.close(preserve_intent=True)
+            self.assertTrue(store.monitor_desired("test"))
+
+            recovered = MonitorJob("test", load_settings({}), store, Path(directory))
+            self.assertTrue(recovered.status_snapshot()["resumePending"])
+            recovered.stop()
+            self.assertFalse(store.monitor_desired("test"))
+            recovered.close()
+
+    def test_fresh_bankid_automatically_restarts_saved_monitor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = VolatileStateStore()
+            store.save_config(
+                "test",
+                {
+                    "name": "B96",
+                    "ssn": "20000101-1234",
+                    "licence_id": 23,
+                    "examination_type_id": 52,
+                    "location_id": 1000130,
+                    "auto_book": True,
+                },
+            )
+            store.set_monitor_desired("test", True)
+            job = MonitorJob("test", load_settings({}), store, Path(directory))
+            job._bankid._state = "complete"
+            job._bankid._personal_number = "20000101-1234"
+            job._catalog = BookingCatalog(
+                (CatalogItem(23, "B96"),),
+                (CatalogItem(52, "Körprov"),),
+                (CatalogItem(1000130, "Skövde"),),
+            )
+            with (
+                patch.object(job, "refresh_catalog", return_value={}) as refresh,
+                patch("provtidsbevakaren.runtime.threading.Thread.start") as start,
+            ):
+                job._initialize_catalog_after_authentication()
+            self.assertEqual([("", 0), ("", 23)], [call.args for call in refresh.call_args_list])
+            start.assert_called_once()
+            self.assertFalse(job.status_snapshot()["resumePending"])
+            self.assertTrue(store.monitor_desired("test"))
+            job.close()
+
 
 class DateAndReservationTests(unittest.TestCase):
     def test_past_start_date_moves_to_local_today(self):
