@@ -95,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.7.2"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.7.3"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -294,6 +294,19 @@ class ServerWebTests(unittest.TestCase):
         self.assertIn("HttpOnly", cookie)
         self.assertIn("Secure", cookie)
         self.assertIn("SameSite=strict", cookie)
+
+    def test_logout_revokes_web_session_without_stopping_monitor(self):
+        bootstrap, headers = self.admin_session()
+        user_id = bootstrap["user"]
+        job = self.app.state.registry.for_user(user_id)
+        self.app.state.store.save_config(user_id, VALID_CONFIG)
+        self.app.state.store.set_monitor_desired(user_id, True)
+        with patch.object(job, "close") as close:
+            response = self.client.post("/api/auth/logout", json={}, headers=headers)
+        self.assertEqual(204, response.status_code)
+        close.assert_not_called()
+        self.assertTrue(self.app.state.store.monitor_desired(user_id))
+        self.assertEqual(401, self.client.get("/api/bootstrap").status_code)
 
     def test_disabled_browser_fallback_is_hidden_and_rejected(self):
         settings = replace(

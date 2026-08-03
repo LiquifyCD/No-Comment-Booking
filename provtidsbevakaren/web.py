@@ -269,7 +269,6 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
 
     @app.post("/api/auth/logout")
     async def logout(session: UserSession = Depends(csrf_session)) -> Response:
-        registry.remove_user(session.user_id)
         auth.revoke(session)
         response = Response(status_code=204)
         response.delete_cookie(COOKIE_NAME, path="/")

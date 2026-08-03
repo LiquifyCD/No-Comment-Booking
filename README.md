@@ -90,6 +90,7 @@ Never commit the environment file. See [architecture](docs/ARCHITECTURE.md) and 
 - Missing fields and expired authentication produce explicit UI errors.
 - Live status uses one same-origin SSE connection, reconnects automatically, and falls back to a bounded snapshot request only while recovering. Event buffers retain at most 100 entries per active runtime.
 - An active monitor intent and its encrypted configuration survive service or server restarts. Because BankID sessions remain memory-only, the dashboard requests a fresh BankID login and then resumes the saved monitor automatically.
+- Closing the page or logging out revokes only the web session; it does not stop an active server monitor. Use **Stoppa bevakning** to stop it explicitly.
 - While monitoring or booking is active, the setup wizard is replaced by a read-only scanning view; stopping restores the saved choices.
 - Logs and public API state exclude identity numbers, cookies, webhook URLs, and BankID challenge secrets.
 
