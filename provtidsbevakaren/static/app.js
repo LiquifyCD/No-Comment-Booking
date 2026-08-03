@@ -58,7 +58,7 @@ function statusFromSnapshot(snapshot) {
 function renderStatus(status, authoritative = true) {
   if (authoritative) state.authoritativeStatus = status;
   state.status = status;
-  ["#statusBadge", "#statusTitle", "#metricEvent", "#footerStatus"].forEach((selector) => {
+  ["#statusTitle", "#metricEvent", "#footerStatus"].forEach((selector) => {
     $(selector).textContent = status.label;
   });
   $("#statusDescription").textContent = status.description;
@@ -127,7 +127,6 @@ function setOptions(select, values, placeholder) {
   values.forEach((item) => select.add(new Option(item.name, item.id)));
   select.disabled = !values.length;
   if (values.some((item) => item.id === current)) select.value = String(current);
-  else if (values.length === 1) select.value = String(values[0].id);
   select.closest("label").hidden = !values.length;
 }
 
@@ -141,7 +140,6 @@ function applyCatalog(data) {
   setOptions(form.elements.examination_type_id, state.catalog.examinationTypes, "Välj provtyp");
   setOptions(form.elements.vehicle_type_id, state.catalog.vehicleTypes, "Välj växellåda / fordon");
   setOptions(form.elements.occasion_choice_id, state.catalog.occasionChoices, "Välj hyrbilsalternativ");
-  applySavedConfig();
   renderLocations();
 }
 
@@ -175,6 +173,7 @@ function itemName(values, id) {
 function renderMonitoringView(snapshot) {
   const status = statusFromSnapshot(snapshot);
   const scanning = SCANNING_STATES.has(status.code);
+  const booked = status.code === "booked";
   $("#wizardProgress").hidden = scanning;
   form.hidden = scanning;
   $("#scanningView").hidden = !scanning;
@@ -184,7 +183,9 @@ function renderMonitoringView(snapshot) {
   }
   const config = state.savedConfig || {};
   const licence = itemName(state.catalog.licences, config.licence_id);
-  $("#scanningTitle").textContent = status.code === "booked" ? "Bokningen är klar" : `Söker efter lediga ${licence === "–" ? "" : `${licence}-`}tider`;
+  $("#scanningView").classList.toggle("booked", booked);
+  $("#bookingCompleteBar").hidden = !booked;
+  $("#scanningTitle").textContent = booked ? "Bokningen är klar" : `Söker efter lediga ${licence === "–" ? "" : `${licence}-`}tider`;
   $("#scanningDescription").textContent = status.description;
   $("#scanningLicence").textContent = licence;
   const dates = [config.date_from, config.date_to].filter(Boolean).join(" – ") || "Alla datum";
@@ -193,8 +194,9 @@ function renderMonitoringView(snapshot) {
   const locationIds = [config.location_id, ...(config.nearby_location_ids || [])].filter(Boolean);
   $("#scanningLocations").textContent = locationIds.map((id) => itemName(state.catalog.locations, id)).join(", ") || "–";
   $("#scanningMode").textContent = config.auto_book ? "Boka åt mig" : "Notifiering";
-  $("#scanStopButton").hidden = status.code === "booked";
+  $("#scanStopButton").hidden = booked;
   $("#scanStopButton").disabled = !status.canStop;
+  $("#restartScanButton").hidden = !booked;
 }
 
 function renderLocations() {
@@ -256,7 +258,7 @@ async function loadInitialCatalog() {
     }
     if (!data) data = await api("/api/catalog/refresh", { method: "POST", body: JSON.stringify({ ssn: "", licence_id: 0 }) });
     applyCatalog(data);
-    const savedLicenceId = Number(state.savedConfig?.licence_id || form.elements.licence_id.value);
+    const savedLicenceId = Number(SCANNING_STATES.has(state.status?.code) ? state.savedConfig?.licence_id : form.elements.licence_id.value);
     if (savedLicenceId && (!state.catalog.examinationTypes.length || !state.catalog.locations.length)) {
       data = await api("/api/catalog/refresh", { method: "POST", body: JSON.stringify({ ssn: "", licence_id: savedLicenceId }) });
       applyCatalog(data);
@@ -289,9 +291,6 @@ function startLive() {
     snapshotUrl: state.isAdmin ? "/api/live" : "/api/status",
     onSnapshot: updateStatus, onUnauthorized: () => showView("login"),
     onState: (value) => {
-      const node = $("#connectionBadge");
-      node.textContent = value === "live" ? "Live" : value === "offline" ? "Offline" : "Återansluter";
-      node.classList.toggle("reconnecting", value !== "live");
       if (value === "live" && state.authoritativeStatus) renderStatus(state.authoritativeStatus, false);
       else if (value !== "live") renderStatus(clientStatus("reconnecting", value === "offline" ? "Nätverket är offline. Serverstatus återansluts automatiskt." : "Anslutningen till serverstatus återställs."), false);
     },
@@ -304,9 +303,9 @@ async function bootstrap() {
   state.csrf = data.csrfToken; state.isAdmin = data.isAdmin; state.discordAllowed = data.discordAllowed; state.savedConfig = data.config || null;
   $("#adminTopNav").hidden = !state.isAdmin; $("#activity").hidden = !state.isAdmin;
   $("#discordPanel").hidden = !state.discordAllowed; $("#discordDefault").checked = !!data.discordDefaultForNewUsers;
-  $("#accountEmail").textContent = data.account?.email || ""; $("#modeBadge").textContent = data.mode.toUpperCase();
+  $("#accountEmail").textContent = data.account?.email || "";
   $("#logoutButton").hidden = data.mode !== "server"; $("#exitButton").hidden = data.mode === "server";
-  showView("app"); applySavedConfig(); updateStatus(data); if (data.catalogUpdatedAt && !data.bankId?.authenticated) { try { applyCatalog(await api("/api/catalog")); renderMonitoringView(data); } catch {} }
+  showView("app"); updateStatus(data); if (data.catalogUpdatedAt && !data.bankId?.authenticated) { try { applyCatalog(await api("/api/catalog")); renderMonitoringView(data); } catch {} }
   startLive();
 }
 
@@ -331,6 +330,8 @@ function validateStep(step) {
   if (afterOptions && !Number(form.elements.examination_type_id.value)) return "Välj en provtyp.";
   if (["schedule", "notifications"].includes(step) && !state.selectedLocations.length) return "Välj minst en provort.";
   if (step === "notifications" && !form.elements.date_from.value) return "Välj ett startdatum.";
+  if (step === "notifications" && !$$('input[name="weekday"]:checked').length) return "Välj minst en veckodag.";
+  if (step === "notifications" && !form.elements.action_mode.value) return "Välj vad som ska hända vid en träff.";
   if (step === "notifications" && form.elements.date_from.value < form.elements.date_from.min) return "Från datum kan inte vara tidigare än idag.";
   return "";
 }
@@ -406,6 +407,14 @@ async function stopMonitoring() {
 }
 $("#stopButton").addEventListener("click", stopMonitoring);
 $("#scanStopButton").addEventListener("click", stopMonitoring);
+$("#restartScanButton").addEventListener("click", async () => {
+  try {
+    const snapshot = await api("/api/monitor/reset", { method: "POST", body: "{}" });
+    form.reset(); state.savedConfig = null; state.selectedLocations = []; $("#locationSearch").value = "";
+    applyCatalog({ licences: state.catalog.licences }); updateDateLimits(); updateStatus(snapshot);
+    showStep(snapshot.bankId?.authenticated ? "options" : "bankid");
+  } catch (error) { toast(error.message); }
+});
 $("#discordButton").addEventListener("click", async () => { const url = form.elements.discord_webhook_url.value.trim(); try { await api("/api/discord/test", { method: "POST", body: JSON.stringify({ name: "Min provtidsbevakning", discord_webhook_url: url }) }); toast("Discord-test skickat."); } catch (error) { toast(error.message); } });
 $("#clearActivity").addEventListener("click", () => $("#activityList").innerHTML = '<div class="empty-state"><strong>Inga händelser ännu</strong></div>');
 

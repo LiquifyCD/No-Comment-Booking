@@ -349,6 +349,9 @@ class TrafikverketClient:
     def booking_hindrances(self, booking_session: dict[str, Any]) -> dict[str, Any]:
         return self.post("booking-hindrances", {"bookingSession": booking_session})
 
+    def confirmed_examinations(self, licence_id: int) -> dict[str, Any]:
+        return self.post("get-confirmed-examinations", {"licenceId": licence_id})
+
     def occasion_bundles(
         self, booking_session: dict[str, Any], occasion_query: dict[str, Any]
     ) -> dict[str, Any]:
@@ -833,6 +836,7 @@ def run_monitor(
 ) -> None:
     emit = event_callback or (lambda _event, _payload: None)
     booking_session = build_booking_session(cfg)
+    rebook_before: str | None = None
     seen = prune_seen(load_seen(seen_path))
     consecutive_errors = 0
     polls = 0
@@ -847,10 +851,32 @@ def run_monitor(
             r"(?<!\d)\d{8}-?\d{4}(?!\d)", "[personnummer dolt]", str(raw_hindrance)
         )[:300]
         LOGGER.warning("Bokningshinder: %s", hindrance)
-        emit("booking_hindrance", {"error": hindrance})
-        if cfg.auto_book:
+        existing_booking = bool(re.search(r"\b(befintlig|redan)\b.*\b(bokning|bokad|prov)\b", hindrance, re.IGNORECASE))
+        emit("booking_hindrance", {"error": hindrance, "existing_booking": existing_booking})
+        if cfg.auto_book and not existing_booking:
             raise BookingHindranceError(
                 f"Trafikverket tillåter inte autobokning för behörigheten: {hindrance}"
+            )
+        if cfg.auto_book and existing_booking:
+            confirmed = nested(client.confirmed_examinations(cfg.licence_id), "data")
+            if not isinstance(confirmed, list):
+                raise BookingHindranceError("Trafikverkets befintliga bokning kunde inte verifieras.")
+            current = next(
+                (
+                    item
+                    for item in confirmed
+                    if isinstance(item, dict)
+                    and int(item.get("examinationTypeId", 0)) == cfg.examination_type_id
+                    and re.fullmatch(r"\d{4}-\d{2}-\d{2}.*", str(item.get("startDate", "")))
+                ),
+                None,
+            )
+            if current is None:
+                raise BookingHindranceError("Befintlig bokning för provtypen kunde inte verifieras.")
+            rebook_before = str(current["startDate"])[:10]
+            emit(
+                "rebooking_scan",
+                {"message": "En befintlig bokning behålls medan en tidigare tid söks.", "before": rebook_before},
             )
 
     LOGGER.info(
@@ -861,6 +887,8 @@ def run_monitor(
         try:
             result = fetch_occasion_pages(client, booking_session, cfg)
             matches = extract_matching_occasions(result, cfg)
+            if rebook_before:
+                matches = [occasion for occasion in matches if str(occasion["date"]) < rebook_before]
             new_matches = [occasion for occasion in matches if slot_key(occasion) not in seen]
             for occasion in new_matches:
                 popup_payload = {

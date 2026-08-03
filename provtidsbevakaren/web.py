@@ -620,6 +620,15 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         await asyncio.to_thread(job.stop)
         return job.status_snapshot()
 
+    @app.post("/api/monitor/reset")
+    async def reset_monitor(session: UserSession = Depends(csrf_session)) -> dict[str, Any]:
+        job = registry.for_user(session.user_id)
+        try:
+            job.prepare_new_scan()
+        except RuntimeConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return job.status_snapshot()
+
     @app.post("/api/discord/test")
     async def discord_test(
         payload: DiscordPayload,

@@ -126,6 +126,8 @@ class MonitorJob:
                 "recovery_required",
                 "Den sparade bevakningen väntar på ny BankID-inloggning efter serveromstart.",
             )
+        elif self.state_store.terminal_state(self.user_id) == "booked" and self.state_store.load_config(self.user_id):
+            self._set_state("booked")
 
     @property
     def state(self) -> str:
@@ -230,6 +232,7 @@ class MonitorJob:
                     f"Från datum flyttades automatiskt till dagens datum ({config.date_from}).",
                 )
             self.state_store.save_config(self.user_id, dataclasses.asdict(config))
+            self.state_store.set_terminal_state(self.user_id, None)
             self.state_store.set_monitor_desired(self.user_id, True)
             self._resume_requested = False
             self._thread = threading.Thread(
@@ -618,10 +621,13 @@ class MonitorJob:
             "reservation_failed": "Reservationen misslyckades. Bevakningen fortsätter.",
             "confirmation_required": "Bokningen fick ett boknings-ID men slutstatus måste kontrolleras manuellt.",
             "booking_hindrance": (
-                "Trafikverket tillåter inte autobokning för den valda behörigheten."
+                "En befintlig bokning behålls medan en tidigare tid söks."
+                if payload.get("existing_booking")
+                else "Trafikverket tillåter inte autobokning för den valda behörigheten."
                 if config.auto_book
                 else "Ett bokningshinder finns, men notifieringsbevakningen fortsätter."
             ),
+            "rebooking_scan": "En befintlig bokning behålls medan en tidigare tid söks.",
             "reserved": "Tiden är reserverad. Slutför bokningen innan reservationen löper ut.",
             "booked": "Tiden är bokad med Pay later/faktura.",
             "booking_error": "Automatisk bokning misslyckades. Reservationen kan slutföras i webbläsaren.",
@@ -635,14 +641,21 @@ class MonitorJob:
             "booked": "booked",
             "booking_error": "action_required" if self._pending_booking else "error",
             "confirmation_required": "action_required",
-            "booking_hindrance": "action_required" if config.auto_book else "monitoring",
+            "booking_hindrance": (
+                "monitoring"
+                if payload.get("existing_booking")
+                else "action_required" if config.auto_book else "monitoring"
+            ),
+            "rebooking_scan": "monitoring",
         }
         if kind in state_by_event:
             self._set_state(state_by_event[kind], messages.get(kind, kind))
         if kind in {"booked", "booking_error", "confirmation_required"} or (
-            kind == "booking_hindrance" and config.auto_book
+            kind == "booking_hindrance" and config.auto_book and not payload.get("existing_booking")
         ):
             self.state_store.set_monitor_desired(self.user_id, False)
+        if kind == "booked":
+            self.state_store.set_terminal_state(self.user_id, "booked")
         self.events.add(kind, messages.get(kind, kind), public_payload)
 
     def _run(self, config: engine.Config) -> None:
@@ -737,6 +750,17 @@ class MonitorJob:
             self.events.add("warning", "BankID-inloggningen stoppar fortfarande ett nätverksanrop.")
         if not (thread and thread.is_alive()) and not (auth_thread and auth_thread.is_alive()):
             self._set_state("stopped")
+
+    def prepare_new_scan(self) -> None:
+        """Clear the completed setup without discarding an active BankID session."""
+        with self._lock:
+            if (self._thread and self._thread.is_alive()) or self._pending_booking:
+                raise RuntimeConflict("Bevakningen måste vara avslutad innan en ny skapas")
+            self.state_store.delete_config(self.user_id)
+            self.state_store.set_monitor_desired(self.user_id, False)
+            self._resume_requested = False
+            self._set_state("ready_to_start" if self._bankid.snapshot()["authenticated"] else "ready")
+            self.events.add("new_scan", "En ny tom bevakning har förberetts.")
 
     def close(self, *, preserve_intent: bool = False) -> None:
         self.stop(persist=not preserve_intent)

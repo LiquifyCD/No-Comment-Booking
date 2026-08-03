@@ -284,12 +284,12 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual("2026-11-13", result["data"]["bundles"][0]["occasions"][0]["date"])
         self.assertEqual([0, 1, 3], [call.args[1]["searchedMonths"] for call in client.occasion_bundles.call_args_list])
 
-    def test_booking_hindrance_blocks_autobook_before_slot_search(self):
+    def test_non_booking_hindrance_blocks_autobook_before_slot_search(self):
         client = Mock(spec=bot.TrafikverketClient)
         client.booking_hindrances.return_value = {
             "data": {
                 "canBookLicence": False,
-                "hindranceMessages": ["Befintlig bokning för 20000101-1234"],
+                "hindranceMessages": ["Obetald skuld för 20000101-1234"],
             }
         }
         events = Mock()
@@ -307,6 +307,31 @@ class MonitorTests(unittest.TestCase):
         client.occasion_bundles.assert_not_called()
         self.assertEqual("booking_hindrance", events.call_args.args[0])
         self.assertNotIn("20000101-1234", repr(events.call_args.args[1]))
+
+    def test_existing_booking_allows_rebooking_scan_without_ignoring_hindrance(self):
+        client = Mock(spec=bot.TrafikverketClient)
+        client.booking_hindrances.return_value = {
+            "data": {"canBookLicence": False, "hindranceMessages": ["Befintlig bokning"]}
+        }
+        client.confirmed_examinations.return_value = {
+            "data": [{"examinationTypeId": 52, "startDate": "2026-11-20T11:00:00"}]
+        }
+        client.occasion_bundles.return_value = {"data": {"bundles": []}}
+        events = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            bot.run_monitor(
+                config(auto_book=True),
+                client,
+                Path(directory) / "seen.json",
+                threading.Event(),
+                max_polls=1,
+                event_callback=events,
+            )
+        self.assertEqual(
+            ["booking_hindrance", "rebooking_scan"],
+            [call.args[0] for call in events.call_args_list],
+        )
+        self.assertFalse(bot.build_booking_session(config())["ignoreBookingHindrance"])
 
     def test_booking_hindrance_allows_safe_notification_only_scan(self):
         client = Mock(spec=bot.TrafikverketClient)
