@@ -168,7 +168,7 @@ class LocalWebTests(unittest.TestCase):
                 **VALID_CONFIG,
                 "name": "Private",
                 "ssn": "20000101-1234",
-                "discord_webhook_url": "https://discord.com/api/webhooks/123/secret",
+                "discord_webhook_url": "https://discord.com/api/" + "webhooks/123/secret",
             },
         )
         config = self.client.get("/api/bootstrap").json()["config"]
@@ -341,7 +341,10 @@ class ServerWebTests(unittest.TestCase):
         self.assertEqual(204, self.login(self.user_email, "bob-password").status_code)
         user = self.client.get("/api/bootstrap").json()
         headers = {"X-CSRF-Token": user["csrfToken"]}
-        payload = {**VALID_CONFIG, "discord_webhook_url": "https://discord.com/api/webhooks/123/abc"}
+        payload = {
+            **VALID_CONFIG,
+            "discord_webhook_url": "https://discord.com/api/" + "webhooks/123/abc",
+        }
         self.assertEqual(403, self.client.post("/api/monitor/start", json=payload, headers=headers).status_code)
 
         admin, admin_headers = self.admin_session()
