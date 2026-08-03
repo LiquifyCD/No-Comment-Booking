@@ -95,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.9.0"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.9.1"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -146,10 +146,12 @@ class LocalWebTests(unittest.TestCase):
         self.assertIn('id="bookingCompleteBar"', page)
         self.assertIn('id="restartScanButton"', page)
         self.assertIn('$("#restartScanButton").addEventListener', script)
-        self.assertNotIn('value="08:00"', page)
-        self.assertNotIn('value="17:00"', page)
-        self.assertNotIn('name="weekday" value="0" checked', page)
-        self.assertNotIn('name="action_mode" value="notify" checked', page)
+        self.assertIn('name="earliest_time" type="time" value="00:00"', page)
+        self.assertIn('name="latest_time" type="time" value="23:59"', page)
+        self.assertIn('name="weekday" value="0" checked', page)
+        self.assertIn('name="weekday" value="4" checked', page)
+        self.assertNotIn('name="weekday" value="5" checked', page)
+        self.assertIn('name="action_mode" value="notify" checked', page)
         self.assertNotIn('else if (values.length === 1)', script)
         self.assertIn('const SCANNING_STATES = new Set', script)
         self.assertIn('form.hidden = scanning', script)
