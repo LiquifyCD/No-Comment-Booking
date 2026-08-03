@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "no-comment-booking"
-version = "2.3.0"
+version = "2.4.0"
 description = "Local-first monitoring service with an opt-in server runtime"
 requires-python = ">=3.11"
 dependencies = [

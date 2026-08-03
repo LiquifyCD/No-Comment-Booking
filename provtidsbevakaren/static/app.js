@@ -16,6 +16,8 @@ const state = {
   authenticated: false,
   browserFallbackAvailable: true,
   isAdmin: false,
+  currentAccount: null,
+  adminUsers: [],
   savedConfig: null,
   catalogAttempted: false,
   nearbySelection: new Set(),
@@ -453,7 +455,7 @@ const liveTransport = new window.LiveTransport({
   getCursor: () => state.lastEvent,
   onState: setConnectionState,
   onSnapshot: applySnapshot,
-  onUnauthorized: showLogin,
+  onUnauthorized: showHome,
 });
 function stopEventStream() {
   liveTransport.stop();
@@ -461,18 +463,25 @@ function stopEventStream() {
 function connectEventStream() {
   liveTransport.start();
 }
-function showLogin() {
+function showOnly(view) {
+  for (const selector of ["#homeView", "#loginView", "#resetView", "#appView"])
+    $(selector).hidden = selector !== view;
+}
+function showHome() {
   stopEventStream();
   state.csrf = "";
-  $("#appView").hidden = true;
-  $("#loginView").hidden = false;
+  showOnly("#homeView");
+}
+function showLogin() {
+  stopEventStream();
+  showOnly("#loginView");
   $("#loginForm").hidden = false;
   $("#showRegister").hidden = false;
   $("#registerForm").hidden = true;
+  $("#loginError").textContent = "";
 }
 function showApp() {
-  $("#loginView").hidden = true;
-  $("#appView").hidden = false;
+  showOnly("#appView");
 }
 async function bootstrap() {
   enforceDateMinimum();
@@ -482,6 +491,7 @@ async function bootstrap() {
     const data = await api("/api/bootstrap");
     state.csrf = data.csrfToken;
     state.isAdmin = data.isAdmin;
+    state.currentAccount = data.account || null;
     state.browserFallbackAvailable = data.browserFallbackAvailable;
     $("#modeBadge").textContent = data.mode.toUpperCase();
     $("#metricMode").dataset.mode = data.mode;
@@ -489,6 +499,8 @@ async function bootstrap() {
     $("#exitButton").hidden = data.mode === "server";
     $("#adminNav").hidden = !data.isAdmin;
     $("#users").hidden = !data.isAdmin;
+    $("#accountEmail").textContent = data.account?.email || "";
+    $("#accountEmail").hidden = !data.account?.email;
     $("#privacyText").textContent =
       data.mode === "local"
         ? "Cookies finns bara i minnet tills programmet stängs."
@@ -511,7 +523,7 @@ async function bootstrap() {
     if (data.isAdmin) await loadUsers();
   } catch (error) {
     if (error.status === 401) {
-      if (health.mode === "server") showLogin();
+      if (health.mode === "server") showHome();
       else {
         $("#loginView").hidden = false;
         $("#loginError").textContent =
@@ -529,18 +541,20 @@ function userStatus(account) {
   return "Godkänd";
 }
 
-function renderUsers(accounts) {
+function renderUsers(accounts, total = accounts.length) {
+  state.adminUsers = accounts;
   const list = $("#userList");
   list.replaceChildren();
+  $("#userResultCount").textContent = `${total} användare`;
   for (const account of accounts) {
     const card = document.createElement("article");
     card.className = "user-card";
 
     const identity = document.createElement("div");
     const name = document.createElement("strong");
-    name.textContent = account.username;
+    name.textContent = account.displayName || account.email;
     const detail = document.createElement("small");
-    detail.textContent = account.role === "admin" ? "Administratör" : "Användare";
+    detail.textContent = account.email;
     identity.append(name, detail);
 
     const status = document.createElement("span");
@@ -549,51 +563,49 @@ function renderUsers(accounts) {
 
     const actions = document.createElement("div");
     actions.className = "user-actions";
-    if (account.role !== "admin") {
-      if (account.status !== "active") {
-        actions.append(
-          userActionButton("Godkänn", "approve", account.username, "secondary"),
-          userActionButton("Markera betald", "mark-paid", account.username, "primary"),
-        );
-      }
-      if (account.status === "active") {
-        actions.append(
-          userActionButton("Stäng av", "disable", account.username, "danger"),
-        );
-      }
-    }
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "button secondary";
+    edit.textContent = "Redigera";
+    edit.addEventListener("click", () => openUserDialog(account));
+    actions.append(edit);
     card.append(identity, status, actions);
     list.append(card);
   }
+  if (!accounts.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Inga användare matchar sökningen.";
+    list.append(empty);
+  }
 }
 
-function userActionButton(label, action, username, style) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = `button ${style}`;
-  button.textContent = label;
-  button.addEventListener("click", async () => {
-    button.disabled = true;
-    try {
-      await api(`/api/admin/users/${encodeURIComponent(username)}/${action}`, {
-        method: "POST",
-        body: "{}",
-      });
-      await loadUsers();
-      toast(`${username} uppdaterades`);
-    } catch (error) {
-      toast(error.message);
-    } finally {
-      button.disabled = false;
-    }
-  });
-  return button;
+function openUserDialog(account = null) {
+  const userForm = $("#userForm");
+  userForm.reset();
+  userForm.elements.id.value = account?.id || "";
+  userForm.elements.email.value = account?.email || "";
+  userForm.elements.display_name.value = account?.displayName || "";
+  userForm.elements.status.value = account?.status || "pending";
+  userForm.elements.role.value = account?.role || "user";
+  userForm.elements.paid.checked = Boolean(account?.paid);
+  $("#userDialogTitle").textContent = account ? "Redigera användare" : "Skapa användare";
+  $("#existingUserFields").hidden = !account;
+  $("#resetUserPassword").hidden = !account;
+  $("#deleteUser").hidden = !account;
+  $("#userFormError").textContent = "";
+  $("#userDialog").showModal();
 }
 
 async function loadUsers() {
   if (!state.isAdmin) return;
-  const data = await api("/api/admin/users");
-  renderUsers(data.users);
+  const params = new URLSearchParams();
+  const query = $("#userSearch").value.trim();
+  if (query) params.set("q", query);
+  if ($("#userStatusFilter").value) params.set("status", $("#userStatusFilter").value);
+  if ($("#userRoleFilter").value) params.set("role", $("#userRoleFilter").value);
+  const data = await api(`/api/admin/users?${params}`);
+  renderUsers(data.users, data.total);
 }
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -772,7 +784,7 @@ $("#registerForm").addEventListener("submit", async (event) => {
     await api("/api/auth/register", {
       method: "POST",
       body: JSON.stringify({
-        username: data.get("username"),
+        email: data.get("email"),
         password: data.get("password"),
       }),
     });
@@ -788,7 +800,110 @@ $("#logoutButton").addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST", body: "{}" });
   state.csrf = "";
   state.isAdmin = false;
-  showLogin();
+  state.currentAccount = null;
+  showHome();
+});
+document.querySelectorAll("[data-open-login]").forEach((button) =>
+  button.addEventListener("click", showLogin),
+);
+document.querySelectorAll("[data-open-home]").forEach((button) =>
+  button.addEventListener("click", showHome),
+);
+$("#resetPasswordForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const values = new FormData(event.currentTarget);
+  if (values.get("password") !== values.get("password_confirm")) {
+    $("#resetMessage").textContent = "Lösenorden matchar inte.";
+    return;
+  }
+  try {
+    await api("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({
+        token: new URLSearchParams(location.search).get("reset"),
+        password: values.get("password"),
+      }),
+    });
+    history.replaceState({}, "", location.pathname);
+    event.currentTarget.reset();
+    showLogin();
+    $("#loginError").textContent = "Lösenordet är uppdaterat. Logga in igen.";
+  } catch (error) {
+    $("#resetMessage").textContent = error.message;
+  }
+});
+$("#createUser").addEventListener("click", () => openUserDialog());
+$("#userSearchForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  loadUsers().catch((error) => toast(error.message));
+});
+document.querySelectorAll("[data-close-user-dialog]").forEach((button) =>
+  button.addEventListener("click", () => $("#userDialog").close()),
+);
+document.querySelectorAll("[data-close-reset-dialog]").forEach((button) =>
+  button.addEventListener("click", () => $("#resetLinkDialog").close()),
+);
+$("#userForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const values = new FormData(event.currentTarget);
+  const id = String(values.get("id") || "");
+  const payload = {
+    email: values.get("email"),
+    display_name: values.get("display_name") || null,
+  };
+  if (id) {
+    payload.status = values.get("status");
+    payload.role = values.get("role");
+    payload.paid = values.get("paid") === "on";
+  }
+  try {
+    const result = await api(id ? `/api/admin/users/${encodeURIComponent(id)}` : "/api/admin/users", {
+      method: id ? "PATCH" : "POST",
+      body: JSON.stringify(payload),
+    });
+    $("#userDialog").close();
+    await loadUsers();
+    toast(id ? "Användaren uppdaterades" : "Användaren skapades");
+    if (!id && result.resetToken) showResetLink(result.resetToken);
+  } catch (error) {
+    $("#userFormError").textContent = error.message;
+  }
+});
+function showResetLink(token) {
+  const url = new URL(location.pathname, location.origin);
+  url.searchParams.set("reset", token);
+  $("#resetLink").value = url.toString();
+  $("#resetLinkDialog").showModal();
+}
+$("#resetUserPassword").addEventListener("click", async () => {
+  const id = $("#userForm").elements.id.value;
+  try {
+    const result = await api(`/api/admin/users/${encodeURIComponent(id)}/password-reset`, {
+      method: "POST",
+      body: "{}",
+    });
+    $("#userDialog").close();
+    showResetLink(result.resetToken);
+  } catch (error) {
+    $("#userFormError").textContent = error.message;
+  }
+});
+$("#deleteUser").addEventListener("click", async () => {
+  const userForm = $("#userForm");
+  const id = userForm.elements.id.value;
+  if (!confirm(`Radera ${userForm.elements.email.value}? Detta kan inte ångras.`)) return;
+  try {
+    await api(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" });
+    $("#userDialog").close();
+    await loadUsers();
+    toast("Användaren raderades");
+  } catch (error) {
+    $("#userFormError").textContent = error.message;
+  }
+});
+$("#copyResetLink").addEventListener("click", async () => {
+  await navigator.clipboard.writeText($("#resetLink").value);
+  toast("Länken kopierades");
 });
 $("#refreshUsers").addEventListener("click", () =>
   loadUsers().catch((error) => toast(error.message)),
@@ -829,8 +944,12 @@ window.addEventListener("offline", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") liveTransport.resume();
 });
-bootstrap().catch((error) => {
-  console.error(error);
-  showLogin();
-  $("#loginError").textContent = "Tjänsten kunde inte startas korrekt.";
-});
+if (new URLSearchParams(location.search).has("reset")) {
+  showOnly("#resetView");
+} else {
+  bootstrap().catch((error) => {
+    console.error(error);
+    showHome();
+    toast("Tjänsten kunde inte startas korrekt.");
+  });
+}

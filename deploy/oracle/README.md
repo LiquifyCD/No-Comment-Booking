@@ -11,7 +11,7 @@ the instance to another application's VCN. Allow inbound TCP 22, 80, and 443
 in Frostbyte's security list, then run:
 
 ```bash
-sudo PUBLIC_HOST=<public-ip-or-domain> APP_USERNAME=liquify \
+sudo PUBLIC_HOST=<public-ip-or-domain> APP_EMAIL=admin@example.com \
   bash /opt/no-comment-booking/source/deploy/oracle/install.sh
 ```
 
@@ -33,6 +33,17 @@ sudo reboot
 After reboot, repeat both health checks and inspect `systemctl is-active no-comment-booking caddy fail2ban`.
 
 ## Redeploy
+
+Before the first 2.4.0 restart of an existing username-based installation, add a
+complete mapping to `/etc/no-comment-booking.env`, for example:
+
+```bash
+ACCOUNT_EMAIL_MIGRATION_JSON={"liquify":"admin@example.com"}
+```
+
+Keep the old `SERVER_USERS_JSON` and `ADMIN_USERS` entries during this one-time
+migration. The service refuses to start and leaves the database unchanged if any
+existing account lacks a unique email mapping.
 
 ```bash
 sudo git -C /opt/no-comment-booking/source fetch --prune --depth 1 origin main

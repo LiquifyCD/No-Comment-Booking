@@ -10,7 +10,7 @@ if [[ -z ${PUBLIC_HOST:-} ]]; then
   exit 1
 fi
 
-APP_USERNAME=${APP_USERNAME:-liquify}
+APP_EMAIL=${APP_EMAIL:-admin@example.com}
 SOURCE_REPOSITORY=${SOURCE_REPOSITORY:-https://github.com/LiquifyCD/No-Comment-Booking.git}
 SOURCE_REF=${SOURCE_REF:-main}
 SOURCE_DIR=/opt/no-comment-booking/source
@@ -70,9 +70,9 @@ PY
 )
 app_secret=$("$VENV_DIR/bin/python" -c 'import secrets; print(secrets.token_urlsafe(48))')
 data_key=$("$VENV_DIR/bin/python" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
-users_json=$(APP_USERNAME="$APP_USERNAME" PASSWORD_HASH="$password_hash" "$VENV_DIR/bin/python" - <<'PY'
+accounts_json=$(APP_EMAIL="$APP_EMAIL" PASSWORD_HASH="$password_hash" "$VENV_DIR/bin/python" - <<'PY'
 import json, os
-print(json.dumps({os.environ["APP_USERNAME"]: os.environ["PASSWORD_HASH"]}, separators=(",", ":")))
+print(json.dumps({os.environ["APP_EMAIL"]: os.environ["PASSWORD_HASH"]}, separators=(",", ":")))
 PY
 )
 unset APP_PASSWORD password_hash
@@ -86,8 +86,9 @@ APP_PORT=8080
 PUBLIC_ORIGIN=https://$PUBLIC_HOST
 ALLOWED_HOSTS=$PUBLIC_HOST,127.0.0.1,localhost
 APP_SECRET_KEY=$app_secret
-SERVER_USERS_JSON=$users_json
-ADMIN_USERS=$APP_USERNAME
+SERVER_ACCOUNTS_JSON=$accounts_json
+ADMIN_EMAILS=$APP_EMAIL
+ACCOUNT_EMAIL_MIGRATION_JSON={}
 DATA_ENCRYPTION_KEY=$data_key
 DATABASE_PATH=/var/lib/no-comment-booking/data/service.db
 REMOTE_WEBDRIVER_URL=
@@ -98,10 +99,10 @@ chmod 0640 /etc/no-comment-booking.env
 
 install -m 0600 /dev/null /root/frostbyte-app-login.txt
 cat > /root/frostbyte-app-login.txt <<EOF
-Username: $APP_USERNAME
+Email: $APP_EMAIL
 Password: $app_password
 EOF
-unset app_password app_secret data_key users_json
+unset app_password app_secret data_key accounts_json
 
 install -m 0644 "$SOURCE_DIR/deploy/oracle/no-comment-booking.service" /etc/systemd/system/no-comment-booking.service
 install -m 0755 "$SOURCE_DIR/deploy/oracle/backup.sh" /usr/local/sbin/no-comment-booking-backup

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,8 +22,9 @@ class AppSettings:
     local_launch_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     public_origin: str = "http://127.0.0.1:8765"
     allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost")
-    server_users: dict[str, str] = field(default_factory=dict)
-    admin_users: tuple[str, ...] = ()
+    server_accounts: dict[str, str] = field(default_factory=dict)
+    admin_emails: tuple[str, ...] = ()
+    legacy_email_map: dict[str, str] = field(default_factory=dict)
     data_encryption_key: str = ""
     database_path: Path = Path("data/service.db")
     remote_webdriver_url: str = ""
@@ -59,7 +61,6 @@ def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
     required = (
         "APP_SECRET_KEY",
         "PUBLIC_ORIGIN",
-        "SERVER_USERS_JSON",
         "DATA_ENCRYPTION_KEY",
     )
     missing = [name for name in required if not env.get(name)]
@@ -77,20 +78,63 @@ def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
         )
     if remote_browser_view_url and "{session_id}" not in remote_browser_view_url:
         raise SettingsError("REMOTE_BROWSER_VIEW_URL must contain {session_id}")
-    try:
-        users = json.loads(env["SERVER_USERS_JSON"])
-    except json.JSONDecodeError as exc:
-        raise SettingsError("SERVER_USERS_JSON is not valid JSON") from exc
-    if not isinstance(users, dict) or not users:
-        raise SettingsError("SERVER_USERS_JSON must be a non-empty username-to-hash object")
-    admin_users = tuple(
-        item.strip().lower() for item in env.get("ADMIN_USERS", "").split(",") if item.strip()
-    )
-    if not admin_users:
-        admin_users = (str(next(iter(users))).strip().lower(),)
-    unknown_admins = [name for name in admin_users if name not in {str(key).lower() for key in users}]
-    if unknown_admins:
-        raise SettingsError("ADMIN_USERS must reference usernames in SERVER_USERS_JSON")
+
+    def json_map(name: str, *, required: bool = False) -> dict[str, str]:
+        raw = env.get(name, "")
+        if not raw:
+            if required:
+                raise SettingsError(f"Missing server settings: {name}")
+            return {}
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise SettingsError(f"{name} is not valid JSON") from exc
+        if not isinstance(value, dict) or (required and not value):
+            raise SettingsError(f"{name} must be a non-empty JSON object")
+        return {str(key).strip().casefold(): str(item) for key, item in value.items()}
+
+    def email(value: str) -> str:
+        normalized = value.strip().casefold()
+        if len(normalized) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
+            raise SettingsError("Account configuration contains an invalid email address")
+        return normalized
+
+    legacy_email_map = {
+        username: email(address)
+        for username, address in json_map("ACCOUNT_EMAIL_MIGRATION_JSON").items()
+    }
+    if env.get("SERVER_ACCOUNTS_JSON"):
+        server_accounts = {
+            email(address): password_hash
+            for address, password_hash in json_map("SERVER_ACCOUNTS_JSON", required=True).items()
+        }
+        admin_emails = tuple(
+            email(item) for item in env.get("ADMIN_EMAILS", "").split(",") if item.strip()
+        )
+    else:
+        legacy_users = json_map("SERVER_USERS_JSON", required=True)
+        missing_mappings = [name for name in legacy_users if name not in legacy_email_map]
+        if missing_mappings:
+            raise SettingsError(
+                "ACCOUNT_EMAIL_MIGRATION_JSON must map every SERVER_USERS_JSON account to email"
+            )
+        server_accounts = {
+            legacy_email_map[username]: password_hash
+            for username, password_hash in legacy_users.items()
+        }
+        legacy_admins = tuple(
+            item.strip().casefold()
+            for item in env.get("ADMIN_USERS", "").split(",")
+            if item.strip()
+        ) or (next(iter(legacy_users)),)
+        unknown_admins = [name for name in legacy_admins if name not in legacy_users]
+        if unknown_admins:
+            raise SettingsError("ADMIN_USERS must reference accounts in SERVER_USERS_JSON")
+        admin_emails = tuple(legacy_email_map[name] for name in legacy_admins)
+    if not admin_emails:
+        admin_emails = (next(iter(server_accounts)),)
+    if any(address not in server_accounts for address in admin_emails):
+        raise SettingsError("ADMIN_EMAILS must reference accounts in SERVER_ACCOUNTS_JSON")
     allowed_hosts = tuple(
         item.strip() for item in env.get("ALLOWED_HOSTS", "").split(",") if item.strip()
     )
@@ -104,8 +148,9 @@ def load_settings(environ: dict[str, str] | None = None) -> AppSettings:
         local_launch_token="",
         public_origin=env["PUBLIC_ORIGIN"].rstrip("/"),
         allowed_hosts=allowed_hosts,
-        server_users={str(key): str(value) for key, value in users.items()},
-        admin_users=admin_users,
+        server_accounts=server_accounts,
+        admin_emails=admin_emails,
+        legacy_email_map=legacy_email_map,
         data_encryption_key=env["DATA_ENCRYPTION_KEY"],
         database_path=Path(env.get("DATABASE_PATH", "data/service.db")),
         remote_webdriver_url=remote_webdriver_url,

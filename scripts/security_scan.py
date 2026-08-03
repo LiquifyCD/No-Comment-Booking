@@ -40,7 +40,9 @@ TEXT_SUFFIXES = {
 def main() -> int:
     findings: list[str] = []
     for path in ROOT.rglob("*"):
-        if not path.is_file() or any(part in IGNORED_PARTS for part in path.parts):
+        if not path.is_file() or any(
+            part in IGNORED_PARTS or part.startswith(".venv") for part in path.parts
+        ):
             continue
         if path.suffix.lower() not in TEXT_SUFFIXES and path.name != "Dockerfile":
             continue

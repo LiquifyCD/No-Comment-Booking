@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from .accounts import Account, SqliteAccountStore
+from .accounts import Account, SqliteAccountStore, normalize_email
 from .settings import AppSettings
 
 
@@ -63,7 +63,7 @@ class AuthManager:
         self._registration_attempts: dict[str, list[float]] = {}
         self._local_token_consumed = False
 
-    def authenticate(self, username: str, password: str, remote: str) -> UserSession | None:
+    def authenticate(self, email: str, password: str, remote: str) -> UserSession | None:
         now = time.time()
         with self._lock:
             attempts = [
@@ -73,47 +73,96 @@ class AuthManager:
                 return None
             attempts.append(now)
             self._login_attempts[remote] = attempts
-        account = self.accounts.get(username) if self.accounts else None
+        account = self.accounts.get_by_email(email) if self.accounts else None
         if not account or not verify_password(password, account.password_hash):
             return None
         if not account.is_active:
             raise AccountAccessDenied(account.status)
         with self._lock:
             self._login_attempts.pop(remote, None)
-        return self.create_session(account.username)
+        return self.create_session(account.id)
 
-    def register(self, username: str, password: str, remote: str) -> Account:
+    def register(self, email: str, password: str, remote: str) -> Account:
         if not self.accounts:
             raise RuntimeError("Registration is only available in server mode")
         now = time.time()
         with self._lock:
             attempts = [
-                stamp
-                for stamp in self._registration_attempts.get(remote, [])
-                if now - stamp < 3600
+                stamp for stamp in self._registration_attempts.get(remote, []) if now - stamp < 3600
             ]
             if len(attempts) >= 5:
                 raise RegistrationRateLimited("För många registreringsförsök. Försök senare.")
             attempts.append(now)
             self._registration_attempts[remote] = attempts
-        return self.accounts.register(username, hash_password(password))
+        normalize_email(email)
+        if len(password) < 12 or len(password) > 256:
+            raise ValueError("Lösenordet måste innehålla minst 12 tecken.")
+        return self.accounts.register(email, hash_password(password))
 
-    def account(self, username: str) -> Account | None:
-        return self.accounts.get(username) if self.accounts else None
+    def account(self, account_id: str) -> Account | None:
+        return self.accounts.get_by_id(account_id) if self.accounts else None
 
-    def list_accounts(self) -> list[Account]:
-        return self.accounts.list_accounts() if self.accounts else []
+    def search_accounts(
+        self,
+        query: str = "",
+        *,
+        status: str = "",
+        role: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Account], int]:
+        if not self.accounts:
+            return [], 0
+        return self.accounts.search_accounts(
+            query, status=status, role=role, limit=limit, offset=offset
+        )
 
-    def approve(self, username: str, *, paid: bool = False) -> Account:
+    def create_invited(self, email: str, display_name: str = "") -> tuple[Account, str]:
         if not self.accounts:
             raise RuntimeError("Accounts are only available in server mode")
-        return self.accounts.approve(username, paid=paid)
+        account = self.accounts.create_invited(
+            email,
+            hash_password(secrets.token_urlsafe(48)),
+            display_name,
+        )
+        return account, self.initiate_password_reset(account.id)
 
-    def disable(self, username: str) -> Account:
+    def update_account(self, account_id: str, *, acting_id: str, **changes: object) -> Account:
         if not self.accounts:
             raise RuntimeError("Accounts are only available in server mode")
-        account = self.accounts.disable(username)
-        self.revoke_user(account.username)
+        account = self.accounts.update_account(account_id, acting_id=acting_id, **changes)
+        self.revoke_user(account.id)
+        return account
+
+    def delete_account(self, account_id: str, *, acting_id: str) -> Account:
+        if not self.accounts:
+            raise RuntimeError("Accounts are only available in server mode")
+        account = self.accounts.delete_account(account_id, acting_id=acting_id)
+        self.revoke_user(account.id)
+        return account
+
+    def initiate_password_reset(self, account_id: str) -> str:
+        if not self.accounts:
+            raise RuntimeError("Accounts are only available in server mode")
+        token = secrets.token_urlsafe(32)
+        self.accounts.set_password_reset(
+            account_id,
+            hashlib.sha256(token.encode()).hexdigest(),
+            int(time.time()) + 30 * 60,
+        )
+        self.revoke_user(account_id)
+        return token
+
+    def reset_password(self, token: str, password: str) -> Account | None:
+        if not self.accounts or len(token) < 32:
+            return None
+        if len(password) < 12 or len(password) > 256:
+            raise ValueError("Lösenordet måste innehålla minst 12 tecken.")
+        account = self.accounts.consume_password_reset(
+            hashlib.sha256(token.encode()).hexdigest(), hash_password(password)
+        )
+        if account:
+            self.revoke_user(account.id)
         return account
 
     def authenticate_local_token(self, token: str) -> UserSession | None:
@@ -175,12 +224,12 @@ class AuthManager:
         with self._lock:
             self._sessions.pop(session.session_id, None)
 
-    def revoke_user(self, username: str) -> None:
+    def revoke_user(self, account_id: str) -> None:
         with self._lock:
             self._sessions = {
                 session_id: session
                 for session_id, session in self._sessions.items()
-                if session.user_id != username
+                if session.user_id != account_id
             }
 
     def close(self) -> None:

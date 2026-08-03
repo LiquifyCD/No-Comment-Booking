@@ -71,7 +71,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 python -m provtidsbevakaren.launcher --hash-password
 ```
 
-4. Copy `.env.server.example` to a private environment file and set `APP_SECRET_KEY`, `DATA_ENCRYPTION_KEY`, `SERVER_USERS_JSON`, `ADMIN_USERS`, `PUBLIC_ORIGIN`, and `ALLOWED_HOSTS`. Users listed in `ADMIN_USERS` seed persistent administrator accounts; newly registered users remain pending until an administrator approves them or records verified payment. Set both remote-browser variables only when protected browser infrastructure exists.
+4. Copy `.env.server.example` to a private environment file and set `APP_SECRET_KEY`, `DATA_ENCRYPTION_KEY`, `SERVER_ACCOUNTS_JSON`, `ADMIN_EMAILS`, `PUBLIC_ORIGIN`, and `ALLOWED_HOSTS`. Emails listed in `ADMIN_EMAILS` seed persistent administrator accounts; newly registered users remain pending until an administrator approves them or records verified payment. For an existing username database, also set `ACCOUNT_EMAIL_MIGRATION_JSON` to a complete username-to-email mapping for the one-time atomic migration. Set both remote-browser variables only when protected browser infrastructure exists.
 5. Set `APP_MODE=server` and `ENABLE_SERVER_MODE=true`.
 6. Start the container behind HTTPS and verify `/api/health`.
 

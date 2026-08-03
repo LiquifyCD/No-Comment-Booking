@@ -11,15 +11,11 @@ import urllib3
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("base_url")
-    parser.add_argument(
-        "--credentials", default="/root/frostbyte-app-login.txt"
-    )
+    parser.add_argument("--credentials", default="/root/frostbyte-app-login.txt")
     parser.add_argument("--insecure", action="store_true")
     parser.add_argument("--exercise-monitor", action="store_true")
     parser.add_argument("--exercise-accounts", action="store_true")
-    parser.add_argument(
-        "--database-path", default="/var/lib/no-comment-booking/data/service.db"
-    )
+    parser.add_argument("--database-path", default="/var/lib/no-comment-booking/data/service.db")
     args = parser.parse_args()
 
     credentials = dict(
@@ -40,7 +36,7 @@ def main() -> None:
 
     invalid = requests.post(
         f"{args.base_url}/api/auth/login",
-        json={"username": credentials["Username"], "password": "invalid"},
+        json={"email": credentials["Email"], "password": "invalid"},
         timeout=15,
         verify=verify,
     )
@@ -50,7 +46,7 @@ def main() -> None:
     login = session.post(
         f"{args.base_url}/api/auth/login",
         json={
-            "username": credentials["Username"],
+            "email": credentials["Email"],
             "password": credentials["Password"],
         },
         timeout=15,
@@ -60,9 +56,7 @@ def main() -> None:
     cookie = login.headers.get("set-cookie", "")
     assert all(value in cookie for value in ("HttpOnly", "Secure", "SameSite=strict"))
 
-    bootstrap = session.get(
-        f"{args.base_url}/api/bootstrap", timeout=15, verify=verify
-    )
+    bootstrap = session.get(f"{args.base_url}/api/bootstrap", timeout=15, verify=verify)
     bootstrap.raise_for_status()
     bootstrap_data = bootstrap.json()
     assert bootstrap_data["browserFallbackAvailable"] is False
@@ -70,13 +64,14 @@ def main() -> None:
 
     if args.exercise_accounts:
         assert bootstrap_data["isAdmin"] is True
-        username = f"smoke-{secrets.token_hex(5)}"
+        email = f"smoke-{secrets.token_hex(5)}@example.com"
         password = f"Smoke-{secrets.token_urlsafe(18)}"
         registered = False
+        account_id = None
         try:
             registration = requests.post(
                 f"{args.base_url}/api/auth/register",
-                json={"username": username, "password": password},
+                json={"email": email, "password": password},
                 timeout=30,
                 verify=verify,
             )
@@ -86,16 +81,17 @@ def main() -> None:
 
             pending = requests.post(
                 f"{args.base_url}/api/auth/login",
-                json={"username": username, "password": password},
+                json={"email": email, "password": password},
                 timeout=30,
                 verify=verify,
             )
             assert pending.status_code == 403
 
             csrf_headers = {"X-CSRF-Token": bootstrap_data["csrfToken"]}
-            approved = session.post(
-                f"{args.base_url}/api/admin/users/{username}/approve",
-                json={},
+            account_id = registration.json()["id"]
+            approved = session.patch(
+                f"{args.base_url}/api/admin/users/{account_id}",
+                json={"status": "active"},
                 headers=csrf_headers,
                 timeout=30,
                 verify=verify,
@@ -105,7 +101,7 @@ def main() -> None:
             user_session = requests.Session()
             user_login = user_session.post(
                 f"{args.base_url}/api/auth/login",
-                json={"username": username, "password": password},
+                json={"email": email, "password": password},
                 timeout=30,
                 verify=verify,
             )
@@ -116,9 +112,9 @@ def main() -> None:
             user_bootstrap.raise_for_status()
             assert user_bootstrap.json()["isAdmin"] is False
 
-            disabled = session.post(
-                f"{args.base_url}/api/admin/users/{username}/disable",
-                json={},
+            disabled = session.patch(
+                f"{args.base_url}/api/admin/users/{account_id}",
+                json={"status": "disabled"},
                 headers=csrf_headers,
                 timeout=30,
                 verify=verify,
@@ -131,9 +127,9 @@ def main() -> None:
                 == 401
             )
         finally:
-            if registered:
+            if registered and account_id:
                 with sqlite3.connect(args.database_path) as database:
-                    database.execute("DELETE FROM accounts WHERE username=?", (username,))
+                    database.execute("DELETE FROM accounts WHERE id=?", (account_id,))
         print("Registration, pending gate, admin approval, and disable: OK")
 
     if args.exercise_monitor:

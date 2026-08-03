@@ -17,9 +17,9 @@ from pydantic import BaseModel, Field
 from . import __version__, engine
 from .accounts import (
     AccountChangeRejected,
+    EmailUnavailable,
     PendingAccountLimit,
     SqliteAccountStore,
-    UsernameUnavailable,
 )
 from .auth import AccountAccessDenied, AuthManager, RegistrationRateLimited, UserSession
 from .runtime import RuntimeConflict, RuntimeRegistry
@@ -31,13 +31,31 @@ STATIC_DIR = Path(__file__).with_name("static")
 
 
 class LoginPayload(BaseModel):
-    username: str = Field(min_length=1, max_length=80)
+    email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=256)
 
 
 class RegisterPayload(BaseModel):
-    username: str = Field(min_length=3, max_length=32)
+    email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=12, max_length=256)
+
+
+class PasswordResetPayload(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    password: str = Field(min_length=12, max_length=256)
+
+
+class AdminCreateAccountPayload(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    display_name: str = Field(default="", max_length=120)
+
+
+class AdminUpdateAccountPayload(BaseModel):
+    email: str | None = Field(default=None, min_length=3, max_length=254)
+    display_name: str | None = Field(default=None, max_length=120)
+    role: str | None = Field(default=None, pattern="^(admin|user)$")
+    status: str | None = Field(default=None, pattern="^(pending|active|disabled)$")
+    paid: bool | None = None
 
 
 class MonitorConfigPayload(BaseModel):
@@ -74,9 +92,13 @@ class CatalogPayload(BaseModel):
 
 
 def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> FastAPI:
-    accounts = SqliteAccountStore(settings.database_path) if settings.is_server else None
+    accounts = (
+        SqliteAccountStore(settings.database_path, settings.legacy_email_map)
+        if settings.is_server
+        else None
+    )
     if accounts:
-        accounts.seed(settings.server_users, settings.admin_users)
+        accounts.seed(settings.server_accounts, settings.admin_emails)
     auth = AuthManager(settings, accounts)
     store = (
         EncryptedSqliteStateStore(settings.database_path, settings.data_encryption_key)
@@ -186,7 +208,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
         remote = remote_identity(request)
         try:
             session = await asyncio.to_thread(
-                auth.authenticate, payload.username, payload.password, remote
+                auth.authenticate, payload.email, payload.password, remote
             )
         except AccountAccessDenied as exc:
             detail = (
@@ -207,17 +229,29 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
             raise HTTPException(status_code=404, detail="Not available in local mode")
         try:
             account = await asyncio.to_thread(
-                auth.register, payload.username, payload.password, remote_identity(request)
+                auth.register, payload.email, payload.password, remote_identity(request)
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        except UsernameUnavailable as exc:
+        except EmailUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except PendingAccountLimit as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except RegistrationRateLimited as exc:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
-        return {"username": account.username, "status": account.status}
+        return {"id": account.id, "email": account.email, "status": account.status}
+
+    @app.post("/api/auth/reset-password")
+    async def reset_password(payload: PasswordResetPayload) -> Response:
+        try:
+            account = await asyncio.to_thread(auth.reset_password, payload.token, payload.password)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if account is None:
+            raise HTTPException(
+                status_code=400, detail="Återställningslänken är ogiltig eller har gått ut."
+            )
+        return Response(status_code=204)
 
     @app.post("/api/auth/logout")
     async def logout(session: UserSession = Depends(csrf_session)) -> Response:
@@ -241,48 +275,109 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
             "mode": settings.mode,
             "version": __version__,
             "user": session.user_id,
+            "account": account.public_dict() if account else None,
             "isAdmin": bool(account and account.is_admin),
             "csrfToken": session.csrf_token,
-            "browserFallbackAvailable": not settings.is_server
-            or settings.has_remote_browser,
+            "browserFallbackAvailable": not settings.is_server or settings.has_remote_browser,
             "config": public_config,
             **job.snapshot(),
         }
 
     @app.get("/api/admin/users")
-    async def admin_users(_session: UserSession = Depends(current_admin)) -> dict[str, Any]:
-        return {"users": [account.public_dict() for account in auth.list_accounts()]}
+    async def admin_users(
+        q: str = "",
+        status: str = "",
+        role: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        _session: UserSession = Depends(current_admin),
+    ) -> dict[str, Any]:
+        if status not in {"", "pending", "active", "disabled"} or role not in {
+            "",
+            "admin",
+            "user",
+        }:
+            raise HTTPException(status_code=422, detail="Ogiltigt sökfilter.")
+        users, total = await asyncio.to_thread(
+            auth.search_accounts,
+            q[:120],
+            status=status,
+            role=role,
+            limit=max(1, min(limit, 100)),
+            offset=max(0, offset),
+        )
+        return {
+            "users": [account.public_dict() for account in users],
+            "total": total,
+            "limit": max(1, min(limit, 100)),
+            "offset": max(0, offset),
+        }
 
-    @app.post("/api/admin/users/{username}/approve")
-    async def approve_user(
-        username: str, _session: UserSession = Depends(csrf_admin)
+    @app.post("/api/admin/users", status_code=201)
+    async def admin_create_user(
+        payload: AdminCreateAccountPayload,
+        _session: UserSession = Depends(csrf_admin),
     ) -> dict[str, Any]:
         try:
-            account = await asyncio.to_thread(auth.approve, username, paid=False)
-        except (ValueError, AccountChangeRejected) as exc:
+            account, reset_token = await asyncio.to_thread(
+                auth.create_invited, payload.email, payload.display_name
+            )
+        except (ValueError, EmailUnavailable) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "account": account.public_dict(),
+            "resetToken": reset_token,
+            "resetExpiresIn": 30 * 60,
+        }
+
+    @app.patch("/api/admin/users/{account_id}")
+    async def admin_update_user(
+        account_id: str,
+        payload: AdminUpdateAccountPayload,
+        session: UserSession = Depends(csrf_admin),
+    ) -> dict[str, Any]:
+        changes = {
+            field: value
+            for field, value in payload.model_dump().items()
+            if field in payload.model_fields_set
+        }
+        try:
+            account = await asyncio.to_thread(
+                auth.update_account,
+                account_id,
+                acting_id=session.user_id,
+                **changes,
+            )
+        except (ValueError, EmailUnavailable, AccountChangeRejected) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if account.status != "active":
+            await asyncio.to_thread(registry.remove_user, account.id)
         return account.public_dict()
 
-    @app.post("/api/admin/users/{username}/mark-paid")
-    async def mark_user_paid(
-        username: str, _session: UserSession = Depends(csrf_admin)
+    @app.post("/api/admin/users/{account_id}/password-reset")
+    async def admin_reset_user_password(
+        account_id: str,
+        _session: UserSession = Depends(csrf_admin),
     ) -> dict[str, Any]:
         try:
-            account = await asyncio.to_thread(auth.approve, username, paid=True)
-        except (ValueError, AccountChangeRejected) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return account.public_dict()
+            reset_token = await asyncio.to_thread(auth.initiate_password_reset, account_id)
+        except AccountChangeRejected as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"resetToken": reset_token, "resetExpiresIn": 30 * 60}
 
-    @app.post("/api/admin/users/{username}/disable")
-    async def disable_user(
-        username: str, _session: UserSession = Depends(csrf_admin)
-    ) -> dict[str, Any]:
+    @app.delete("/api/admin/users/{account_id}")
+    async def admin_delete_user(
+        account_id: str,
+        session: UserSession = Depends(csrf_admin),
+    ) -> Response:
         try:
-            account = await asyncio.to_thread(auth.disable, username)
-        except (ValueError, AccountChangeRejected) as exc:
+            account = await asyncio.to_thread(
+                auth.delete_account, account_id, acting_id=session.user_id
+            )
+        except AccountChangeRejected as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        registry.remove_user(account.username)
-        return account.public_dict()
+        await asyncio.to_thread(registry.remove_user, account.id, delete_config=True)
+        return Response(status_code=204)
 
     @app.get("/api/events", include_in_schema=False)
     @app.get("/api/live")
@@ -311,7 +406,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
                 if session.expires_at < time.time() or (
                     settings.is_server and (not account or not account.is_active)
                 ):
-                    yield "event: auth\ndata: {\"status\":401}\n\n"
+                    yield 'event: auth\ndata: {"status":401}\n\n'
                     return
 
                 snapshot = job.snapshot(cursor)
@@ -325,9 +420,7 @@ def create_app(settings: AppSettings, shutdown_callback: Any | None = None) -> F
                     sort_keys=True,
                 )
                 if events or state_signature != previous_state:
-                    payload = json.dumps(
-                        snapshot, ensure_ascii=False, separators=(",", ":")
-                    )
+                    payload = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
                     yield f"id: {cursor}\ndata: {payload}\n\n"
                     previous_state = state_signature
                     last_send = time.monotonic()

@@ -1,17 +1,19 @@
 param(
-    [string]$DistPath = (Join-Path $PSScriptRoot "dist")
+    [string]$DistPath = (Join-Path $PSScriptRoot "dist"),
+    [string]$PythonPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$python = Join-Path $root ".venv\Scripts\python.exe"
+$python = if ($PythonPath) { [IO.Path]::GetFullPath($PythonPath) } else { Join-Path $root ".venv\Scripts\python.exe" }
 $static = Join-Path $root "provtidsbevakaren\static"
 Push-Location $root
 try {
 
-if (-not (Test-Path -LiteralPath $python)) {
+if (-not $PythonPath -and -not (Test-Path -LiteralPath $python)) {
     python -m venv (Join-Path $root ".venv")
 }
+if (-not (Test-Path -LiteralPath $python)) { throw "Python executable not found: $python" }
     & $python -m pip install -e ".[dev]"
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
 

@@ -1,9 +1,11 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 from cryptography.fernet import Fernet
 
+from provtidsbevakaren.accounts import AccountMigrationRequired, SqliteAccountStore
 from provtidsbevakaren.auth import AuthManager, hash_password, verify_password
 from provtidsbevakaren.settings import SettingsError, load_settings
 from provtidsbevakaren.storage import EncryptedSqliteStateStore, VolatileStateStore
@@ -30,14 +32,15 @@ class SettingsTests(unittest.TestCase):
                 "APP_SECRET_KEY": "x" * 48,
                 "PUBLIC_ORIGIN": "https://service.example",
                 "ALLOWED_HOSTS": "service.example",
-                "SERVER_USERS_JSON": '{"user":"hash"}',
+                "SERVER_ACCOUNTS_JSON": '{"user@example.com":"hash"}',
+                "ADMIN_EMAILS": "user@example.com",
                 "DATA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
                 "REMOTE_WEBDRIVER_URL": "http://browser:4444/wd/hub",
                 "REMOTE_BROWSER_VIEW_URL": "https://viewer.example/session/{session_id}",
             }
         )
         self.assertTrue(settings.is_server)
-        self.assertEqual({"user": "hash"}, settings.server_users)
+        self.assertEqual({"user@example.com": "hash"}, settings.server_accounts)
         self.assertTrue(settings.has_remote_browser)
 
     def test_server_mode_can_disable_remote_browser_fallback(self):
@@ -48,7 +51,8 @@ class SettingsTests(unittest.TestCase):
                 "APP_SECRET_KEY": "x" * 48,
                 "PUBLIC_ORIGIN": "https://service.example",
                 "ALLOWED_HOSTS": "service.example",
-                "SERVER_USERS_JSON": '{"user":"hash"}',
+                "SERVER_ACCOUNTS_JSON": '{"user@example.com":"hash"}',
+                "ADMIN_EMAILS": "user@example.com",
                 "DATA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
             }
         )
@@ -63,11 +67,34 @@ class SettingsTests(unittest.TestCase):
                     "APP_SECRET_KEY": "x" * 48,
                     "PUBLIC_ORIGIN": "https://service.example",
                     "ALLOWED_HOSTS": "service.example",
-                    "SERVER_USERS_JSON": '{"user":"hash"}',
+                    "SERVER_ACCOUNTS_JSON": '{"user@example.com":"hash"}',
+                    "ADMIN_EMAILS": "user@example.com",
                     "DATA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
                     "REMOTE_WEBDRIVER_URL": "http://browser:4444/wd/hub",
                 }
             )
+
+    def test_legacy_configuration_requires_explicit_email_mapping(self):
+        base = {
+            "APP_MODE": "server",
+            "ENABLE_SERVER_MODE": "true",
+            "APP_SECRET_KEY": "x" * 48,
+            "PUBLIC_ORIGIN": "https://service.example",
+            "ALLOWED_HOSTS": "service.example",
+            "SERVER_USERS_JSON": '{"legacy-admin":"hash"}',
+            "ADMIN_USERS": "legacy-admin",
+            "DATA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        }
+        with self.assertRaisesRegex(SettingsError, "ACCOUNT_EMAIL_MIGRATION_JSON"):
+            load_settings(base)
+        settings = load_settings(
+            {
+                **base,
+                "ACCOUNT_EMAIL_MIGRATION_JSON": ('{"legacy-admin":"admin@example.com"}'),
+            }
+        )
+        self.assertEqual({"admin@example.com": "hash"}, settings.server_accounts)
+        self.assertEqual(("admin@example.com",), settings.admin_emails)
 
 
 class AuthTests(unittest.TestCase):
@@ -106,6 +133,73 @@ class StorageTests(unittest.TestCase):
             raw = path.read_bytes()
             self.assertNotIn(b"00000000-0000", raw)
             self.assertNotIn(b"discord.invalid", raw)
+
+    def test_legacy_accounts_migrate_atomically_to_email_and_keep_internal_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.db"
+            connection = sqlite3.connect(path)
+            with connection:
+                connection.execute(
+                    "CREATE TABLE accounts ("
+                    "username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,"
+                    "role TEXT NOT NULL,status TEXT NOT NULL,paid INTEGER NOT NULL,"
+                    "access_source TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)"
+                )
+                connection.execute(
+                    "INSERT INTO accounts VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                    ("legacy-admin", "hash", "admin", "active", 1, "admin"),
+                )
+            connection.close()
+            with self.assertRaises(AccountMigrationRequired):
+                SqliteAccountStore(path)
+            connection = sqlite3.connect(path)
+            self.assertIn(
+                "username",
+                {row[1] for row in connection.execute("PRAGMA table_info(accounts)")},
+            )
+            connection.close()
+            store = SqliteAccountStore(path, {"legacy-admin": "Admin@Example.com"})
+            account = store.get_by_email("admin@example.com")
+            self.assertIsNotNone(account)
+            self.assertEqual("legacy-admin", account.id)
+            self.assertNotIn(
+                "username",
+                {row[1] for row in store._connection.execute("PRAGMA table_info(accounts)")},
+            )
+            store.close()
+
+    def test_legacy_migration_rejects_duplicate_email_mapping_without_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.db"
+            connection = sqlite3.connect(path)
+            with connection:
+                connection.execute(
+                    "CREATE TABLE accounts ("
+                    "username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,"
+                    "role TEXT NOT NULL,status TEXT NOT NULL,paid INTEGER NOT NULL,"
+                    "access_source TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)"
+                )
+                for username in ("legacy-one", "legacy-two"):
+                    connection.execute(
+                        "INSERT INTO accounts VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                        (username, "hash", "user", "active", 1, "legacy"),
+                    )
+            connection.close()
+            with self.assertRaisesRegex(AccountMigrationRequired, "duplicerade"):
+                SqliteAccountStore(
+                    path,
+                    {
+                        "legacy-one": "same@example.com",
+                        "legacy-two": "same@example.com",
+                    },
+                )
+            connection = sqlite3.connect(path)
+            self.assertEqual(2, connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0])
+            self.assertIn(
+                "username",
+                {row[1] for row in connection.execute("PRAGMA table_info(accounts)")},
+            )
+            connection.close()
 
 
 if __name__ == "__main__":

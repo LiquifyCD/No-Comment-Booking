@@ -10,24 +10,71 @@
     <script src="/static/app.js" defer></script>
   </head>
   <body>
+    <a class="skip-link" href="#mainContent">Hoppa till innehållet</a>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <main id="loginView" class="login-shell" hidden>
-      <section class="login-card">
-        <div class="brand-mark" aria-hidden="true">P</div>
+    <main id="homeView" class="public-site">
+      <header class="public-header">
+        <a class="public-brand" href="#top" aria-label="No-Comment-Booking startsida">
+          <span class="brand-mark">NC</span>
+          <span><strong>No-Comment-Booking</strong><small>Provtider utan onödigt väntande</small></span>
+        </a>
+        <nav aria-label="Sidnavigation">
+          <a href="#howItWorks">Så fungerar det</a>
+          <a href="#security">Säkerhet</a>
+          <button class="button secondary" type="button" data-open-login>Logga in</button>
+        </nav>
+      </header>
+      <section id="mainContent" class="public-hero" aria-labelledby="homeTitle">
+        <div class="public-hero-copy">
+          <p class="eyebrow">Automatisk provtidsbevakning</p>
+          <h1 id="homeTitle">Låt bevakningen hålla utkik. Du väljer när det passar.</h1>
+          <p class="public-lead">
+            No-Comment-Booking bevakar valda provorter och tider, visar status direkt
+            och meddelar när ett relevant tillfälle hittas.
+          </p>
+          <div class="public-actions">
+            <button class="button primary" type="button" data-open-login>Logga in</button>
+            <a class="button ghost" href="#howItWorks">Se hur det fungerar</a>
+          </div>
+          <ul class="trust-list" aria-label="Viktiga egenskaper">
+            <li>BankID när det behövs</li>
+            <li>Live-status utan omladdning</li>
+            <li>Du styr bokningen</li>
+          </ul>
+        </div>
+        <div class="public-preview" aria-label="Exempel på bevakningsstatus">
+          <div class="preview-top"><span class="status-pulse"></span><strong>Bevakning aktiv</strong></div>
+          <div class="preview-route"><span>B</span><div><small>Behörighet</small><strong>Personbil</strong></div></div>
+          <div class="preview-route"><span>3</span><div><small>Valda orter</small><strong>Göteborg med omnejd</strong></div></div>
+          <div class="preview-result"><small>Senaste kontroll</small><strong>Uppdaterad nyss</strong></div>
+        </div>
+      </section>
+      <section id="howItWorks" class="public-section" aria-labelledby="stepsTitle">
+        <p class="eyebrow">Enkelt från start</p>
+        <h2 id="stepsTitle">Tre steg till en lugnare bevakning</h2>
+        <div class="public-card-grid">
+          <article><span>01</span><h3>Anslut säkert</h3><p>Logga in och slutför BankID när tjänsten behöver en giltig session.</p></article>
+          <article><span>02</span><h3>Välj vad som passar</h3><p>Behörigheter, provtyper och orter hämtas för din profil.</p></article>
+          <article><span>03</span><h3>Följ status live</h3><p>Starta bevakningen och få tydliga händelser utan att uppdatera sidan.</p></article>
+        </div>
+      </section>
+      <section id="security" class="public-section security-section" aria-labelledby="securityTitle">
+        <div><p class="eyebrow">Byggd för integritet</p><h2 id="securityTitle">Känsliga uppgifter hör inte hemma i gränssnittet.</h2></div>
+        <ul><li>Lösenord lagras endast som starka hashvärden.</li><li>BankID- och personuppgifter visas inte i administratörsvyn.</li><li>Konton kräver aktivering innan de får använda tjänsten.</li></ul>
+      </section>
+      <footer class="public-footer"><span>No-Comment-Booking</span><button class="text-button" type="button" data-open-login>Logga in</button></footer>
+    </main>
+
+    <main id="loginView" class="auth-shell" hidden>
+      <section class="auth-card" aria-labelledby="authTitle">
+        <button class="back-link" type="button" data-open-home>← Till startsidan</button>
+        <div class="brand-mark" aria-hidden="true">NC</div>
         <p class="eyebrow">Säker inloggning</p>
-        <h1>Välkommen tillbaka</h1>
-        <p class="muted">
-          Logga in för att hantera dina bevakningar. Inloggningscookies från
-          Trafikverket lagras aldrig.
-        </p>
+        <h1 id="authTitle">Välkommen tillbaka</h1>
+        <p class="muted">Logga in med e-post för att hantera din bevakning.</p>
         <form id="loginForm" class="stack">
-          <label
-            >Användarnamn<input
-              name="username"
-              autocomplete="username"
-              required
-          /></label>
+          <label>E-postadress<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required /></label>
           <label
             >Lösenord<input
               name="password"
@@ -42,15 +89,7 @@
         </button>
         <p id="loginError" class="form-error" role="alert"></p>
         <form id="registerForm" class="stack" hidden>
-          <label
-            >Användarnamn<input
-              name="username"
-              autocomplete="username"
-              minlength="3"
-              maxlength="32"
-              pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}"
-              required
-          /></label>
+          <label>E-postadress<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required /></label>
           <label
             >Lösenord<input
               name="password"
@@ -73,6 +112,22 @@
           </button>
         </form>
         <p id="registerMessage" class="form-message" role="status"></p>
+      </section>
+    </main>
+
+    <main id="resetView" class="auth-shell" hidden>
+      <section class="auth-card" aria-labelledby="resetTitle">
+        <div class="brand-mark" aria-hidden="true">NC</div>
+        <p class="eyebrow">Återställ lösenord</p>
+        <h1 id="resetTitle">Välj ett nytt lösenord</h1>
+        <p class="muted">Länken kan bara användas en gång och gäller i 30 minuter.</p>
+        <form id="resetPasswordForm" class="stack">
+          <label>Nytt lösenord<input name="password" type="password" autocomplete="new-password" minlength="12" required /></label>
+          <label>Upprepa lösenord<input name="password_confirm" type="password" autocomplete="new-password" minlength="12" required /></label>
+          <button class="button primary full" type="submit">Spara nytt lösenord</button>
+        </form>
+        <p id="resetMessage" class="form-message" role="status"></p>
+        <button class="button ghost full" type="button" data-open-login>Till inloggningen</button>
       </section>
     </main>
 
@@ -122,6 +177,7 @@
             <h1>Din provtidsbevakning</h1>
           </div>
           <div class="top-actions">
+            <span id="accountEmail" class="account-email" hidden></span>
             <span id="connectionBadge" class="connection-badge reconnecting" role="status">
               Återansluter
             </span>
@@ -473,15 +529,20 @@
               <p class="eyebrow">Administration</p>
               <h2>Användarkonton</h2>
             </div>
-            <button id="refreshUsers" class="button ghost" type="button">
-              Uppdatera
-            </button>
+            <button id="createUser" class="button primary" type="button">Skapa användare</button>
           </div>
           <p class="muted">
-            Nya konton saknar åtkomst tills betalning har verifierats eller en
-            administratör godkänner dem.
+            Sök, aktivera och administrera konton. Roller och åtkomst kontrolleras alltid på servern.
           </p>
-          <div id="userList" class="user-list"></div>
+          <form id="userSearchForm" class="admin-toolbar" role="search">
+            <label><span class="sr-only">Sök användare</span><input id="userSearch" type="search" placeholder="Sök e-post eller namn" autocomplete="off" /></label>
+            <label><span class="sr-only">Filtrera status</span><select id="userStatusFilter"><option value="">Alla statusar</option><option value="pending">Väntar</option><option value="active">Aktiv</option><option value="disabled">Avstängd</option></select></label>
+            <label><span class="sr-only">Filtrera roll</span><select id="userRoleFilter"><option value="">Alla roller</option><option value="user">Användare</option><option value="admin">Administratör</option></select></label>
+            <button class="button secondary" type="submit">Sök</button>
+            <button id="refreshUsers" class="button ghost" type="button">Uppdatera</button>
+          </form>
+          <p id="userResultCount" class="result-count" role="status"></p>
+          <div id="userList" class="user-list" aria-live="polite"></div>
         </section>
       </main>
     </div>
@@ -525,6 +586,35 @@
         Försök igen
       </button>
       <button id="bankidCancel" class="button ghost full" type="button">Avbryt</button>
+    </dialog>
+
+    <dialog id="userDialog" class="event-dialog admin-dialog">
+      <button class="dialog-close" type="button" data-close-user-dialog aria-label="Stäng">×</button>
+      <p class="eyebrow">Administration</p>
+      <h2 id="userDialogTitle">Redigera användare</h2>
+      <form id="userForm" class="stack">
+        <input name="id" type="hidden" />
+        <label>E-postadress<input name="email" type="email" autocomplete="off" maxlength="254" required /></label>
+        <label>Visningsnamn<input name="display_name" autocomplete="off" maxlength="120" /></label>
+        <div id="existingUserFields" class="stack">
+          <label>Status<select name="status"><option value="pending">Väntar</option><option value="active">Aktiv</option><option value="disabled">Avstängd</option></select></label>
+          <label>Roll<select name="role"><option value="user">Användare</option><option value="admin">Administratör</option></select></label>
+          <label class="check"><input name="paid" type="checkbox" /><span>Betalning verifierad</span></label>
+        </div>
+        <p id="userFormError" class="form-error" role="alert"></p>
+        <button class="button primary full" type="submit">Spara</button>
+        <button id="resetUserPassword" class="button secondary full" type="button">Skapa återställningslänk</button>
+        <button id="deleteUser" class="button danger full" type="button">Radera användare</button>
+      </form>
+    </dialog>
+
+    <dialog id="resetLinkDialog" class="event-dialog admin-dialog">
+      <button class="dialog-close" type="button" data-close-reset-dialog aria-label="Stäng">×</button>
+      <p class="eyebrow">Engångslänk</p>
+      <h2>Lösenordsåterställning skapad</h2>
+      <p>Länken visas bara nu och gäller i 30 minuter. Skicka den till rätt person via en säker kanal.</p>
+      <label>Återställningslänk<input id="resetLink" readonly /></label>
+      <button id="copyResetLink" class="button primary full" type="button">Kopiera länken</button>
     </dialog>
   </body>
 </html>
