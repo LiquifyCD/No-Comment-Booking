@@ -66,7 +66,7 @@
     }
 
     _connectEventSource() {
-      const source = new this.options.EventSource(this._streamUrl());
+      const source = new (this.options.EventSource)(this._streamUrl());
       this.eventSource = source;
       source.onopen = () => {
         if (this.eventSource !== source) return;

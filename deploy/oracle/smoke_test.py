@@ -29,6 +29,9 @@ def main() -> None:
 
     root = requests.get(args.base_url, timeout=15, verify=verify)
     assert root.status_code == 200
+    assert 'class="sidebar"' not in root.text
+    assert 'class="brand-mark"' not in root.text
+    assert 'data-step="bankid"' in root.text
 
     health = requests.get(f"{args.base_url}/api/health", timeout=15, verify=verify)
     health.raise_for_status()
@@ -60,6 +63,19 @@ def main() -> None:
     bootstrap.raise_for_status()
     bootstrap_data = bootstrap.json()
     assert bootstrap_data["browserFallbackAvailable"] is False
+    with session.get(
+        f"{args.base_url}/api/live/stream?after=0",
+        timeout=(15, 15),
+        verify=verify,
+        stream=True,
+    ) as stream:
+        stream.raise_for_status()
+        event = b""
+        for chunk in stream.iter_content(chunk_size=1):
+            event += chunk
+            if b"\n\n" in event:
+                break
+        assert b"data: " in event
     print("Public health, authentication, secure cookie, and bootstrap: OK")
 
     if args.exercise_accounts:
@@ -110,7 +126,31 @@ def main() -> None:
                 f"{args.base_url}/api/bootstrap", timeout=15, verify=verify
             )
             user_bootstrap.raise_for_status()
-            assert user_bootstrap.json()["isAdmin"] is False
+            user_data = user_bootstrap.json()
+            assert user_data["isAdmin"] is False
+            assert user_data["discordAllowed"] is False
+            assert "events" not in user_data
+            assert (
+                user_session.get(
+                    f"{args.base_url}/api/status", timeout=15, verify=verify
+                ).status_code
+                == 200
+            )
+            assert (
+                user_session.get(
+                    f"{args.base_url}/api/live", timeout=15, verify=verify
+                ).status_code
+                == 403
+            )
+            discord_allowed = session.patch(
+                f"{args.base_url}/api/admin/users/{account_id}",
+                json={"discord_allowed": True},
+                headers=csrf_headers,
+                timeout=30,
+                verify=verify,
+            )
+            discord_allowed.raise_for_status()
+            assert discord_allowed.json()["discordAllowed"] is True
 
             disabled = session.patch(
                 f"{args.base_url}/api/admin/users/{account_id}",
@@ -138,6 +178,16 @@ def main() -> None:
         live = session.get(f"{args.base_url}/api/live?after=0", timeout=15, verify=verify)
         live.raise_for_status()
         assert "state" in live.json()
+        assert (
+            session.post(
+                f"{args.base_url}/api/reservation/book",
+                json={},
+                headers={"X-CSRF-Token": bootstrap_data["csrfToken"]},
+                timeout=15,
+                verify=verify,
+            ).status_code
+            == 404
+        )
         print("Authenticated live status and PII redaction: OK")
 
 

@@ -77,8 +77,22 @@ def main() -> None:
         desktop.find_element(By.CSS_SELECTOR, '#loginForm input[name="password"]').send_keys(
             args.password
         )
-        desktop.find_element(By.CSS_SELECTOR, "#loginForm button[type=submit]").click()
+        desktop.find_element(By.CSS_SELECTOR, "#loginForm .button.primary").click()
         wait.until(conditions.visibility_of_element_located((By.ID, "appView")))
+        try:
+            wait.until(lambda page: page.find_element(By.ID, "connectionBadge").text == "Live")
+        except Exception as exc:
+            badge = desktop.find_element(By.ID, "connectionBadge").text
+            diagnostics = desktop.execute_script(
+                "return {transport: typeof window.LiveTransport, "
+                "eventSource: typeof window.EventSource, appHidden: document.querySelector('#appView').hidden, "
+                "loginError: document.querySelector('#loginError').textContent, "
+                "resources: performance.getEntriesByType('resource').map(x=>x.name).filter(x=>x.includes('/api/'))}"
+            )
+            raise AssertionError(
+                f"Live connection did not stabilize (badge={badge!r}, diagnostics={diagnostics}, "
+                f"logs={desktop.get_log('browser')})"
+            ) from exc
         desktop.find_element(By.CSS_SELECTOR, '[data-admin-view="users"]').click()
         wait.until(conditions.visibility_of_element_located((By.ID, "userList")))
         wait.until(lambda page: page.find_elements(By.CSS_SELECTOR, ".user-row"))
@@ -103,7 +117,7 @@ def main() -> None:
             desktop.find_element(By.CSS_SELECTOR, '#userForm input[name="display_name"]').send_keys(
                 "UI Smoke User"
             )
-            desktop.find_element(By.CSS_SELECTOR, "#userForm button[type=submit]").click()
+            desktop.find_element(By.CSS_SELECTOR, "#userForm .button.primary").click()
             wait.until(conditions.visibility_of_element_located((By.ID, "resetLinkDialog")))
             if "?reset=" not in desktop.find_element(By.ID, "resetLink").get_attribute("value"):
                 raise AssertionError("Admin create did not produce a password reset link")
@@ -111,13 +125,14 @@ def main() -> None:
 
             search = desktop.find_element(By.ID, "userSearch")
             search.send_keys(email)
-            desktop.find_element(By.CSS_SELECTOR, "#userSearchForm button[type=submit]").click()
-            card = wait.until(
-                conditions.visibility_of_element_located((By.CSS_SELECTOR, ".user-row"))
-            )
+            desktop.find_element(By.CSS_SELECTOR, "#userSearchForm .button.secondary").click()
+            card_xpath = f'//article[contains(@class,"user-row")][.//strong[text()="{email}"]]'
+            card = wait.until(conditions.visibility_of_element_located((By.XPATH, card_xpath)))
             if email not in card.text:
                 raise AssertionError("Admin search returned the wrong account")
-            card.find_element(By.TAG_NAME, "button").click()
+            wait.until(
+                conditions.element_to_be_clickable((By.XPATH, f"{card_xpath}//button"))
+            ).click()
             wait.until(conditions.visibility_of_element_located((By.ID, "userDialog")))
             name = desktop.find_element(By.CSS_SELECTOR, '#userForm input[name="display_name"]')
             name.clear()
@@ -128,14 +143,14 @@ def main() -> None:
             paid = desktop.find_element(By.CSS_SELECTOR, '#userForm input[name="paid"]')
             if not paid.is_selected():
                 paid.click()
-            desktop.find_element(By.CSS_SELECTOR, "#userForm button[type=submit]").click()
+            desktop.find_element(By.CSS_SELECTOR, "#userForm .button.primary").click()
             wait.until(conditions.invisibility_of_element_located((By.ID, "userDialog")))
-            card = wait.until(
-                conditions.visibility_of_element_located((By.CSS_SELECTOR, ".user-row"))
-            )
+            card = wait.until(conditions.visibility_of_element_located((By.XPATH, card_xpath)))
             if "Edited UI User" not in card.text or "active" not in card.text:
                 raise AssertionError("Admin edit was not reflected in the user list")
-            card.find_element(By.TAG_NAME, "button").click()
+            wait.until(
+                conditions.element_to_be_clickable((By.XPATH, f"{card_xpath}//button"))
+            ).click()
             wait.until(conditions.visibility_of_element_located((By.ID, "userDialog")))
             desktop.find_element(By.ID, "deleteUser").click()
             wait.until(conditions.alert_is_present()).accept()

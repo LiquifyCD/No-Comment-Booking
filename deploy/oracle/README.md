@@ -4,6 +4,8 @@ This deployment targets Ubuntu 24.04 on `VM.Standard.E2.1.Micro`. The FastAPI ap
 
 The optional Selenium browser fallback is disabled because a secure isolated browser and viewer do not fit reliably in the micro instance's 1 GB RAM. Integrated Mobile BankID remains available.
 
+Do not enable Caddy response compression for this origin: it can buffer the first SSE event and delay browser status updates. Cloudflare may still compress completed static responses at the edge.
+
 ## Install
 
 Create a dedicated `Frostbyte-vcn` with `Frostbyte-public-subnet`; do not attach
