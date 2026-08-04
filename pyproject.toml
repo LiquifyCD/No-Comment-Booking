@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "no-comment-booking"
-version = "2.9.2"
+version = "2.9.3"
 description = "Local-first monitoring service with an opt-in server runtime"
 requires-python = ">=3.11"
 dependencies = [
@@ -25,7 +25,7 @@ dev = ["httpx2>=2.7,<3", "pyinstaller>=6.11,<7", "pytest>=8.3,<9", "ruff>=0.12,<
 no-comment-booking = "provtidsbevakaren.launcher:main"
 
 [tool.setuptools.package-data]
-provtidsbevakaren = ["static/*.html", "static/*.css", "static/*.js"]
+provtidsbevakaren = ["static/*.html", "static/*.css", "static/*.js", "static/*.png"]
 
 [tool.setuptools.packages.find]
 include = ["provtidsbevakaren*"]
