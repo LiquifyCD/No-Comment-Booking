@@ -95,7 +95,7 @@ class LocalWebTests(unittest.TestCase):
 
     def test_health_and_security_headers(self):
         response = self.client.get("/api/health")
-        self.assertEqual({"status": "ok", "mode": "local", "version": "2.9.1"}, response.json())
+        self.assertEqual({"status": "ok", "mode": "local", "version": "2.9.2"}, response.json())
         self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
         self.assertEqual("no-store", response.headers["cache-control"])
 
@@ -116,6 +116,8 @@ class LocalWebTests(unittest.TestCase):
         self.assertNotIn('class="sidebar"', page)
         self.assertNotIn('class="brand-mark"', page)
         self.assertNotIn('>NC<', page)
+        self.assertIn('rel="icon" type="image/png" sizes="64x64" href="/static/favicon.png"', page)
+        self.assertEqual("image/png", self.client.get("/static/favicon.png").headers["content-type"])
         self.assertNotIn('name="poll_interval_seconds"', page)
         self.assertNotIn("Reservera", page)
         self.assertNotIn(">Intervall<", page)
